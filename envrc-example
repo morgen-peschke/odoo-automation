@@ -1,0 +1,8 @@
+#!/bin/bash
+
+export ODOO_SERVER_URI='https://<domain>.odoo.com/jsonrpc'
+export ODOO_USERNAME='user@example.com' # Login for user with API Key
+export ODOO_DATABASE='<db name>'        # See https://www.odoo.com/my/databases
+export ODOO_API_KEY='API key'           # Generate in Preferences > Account Security > API Keys
+export ODOO_LOGIN_CACHE='./session.json'
+export ODOO_DRY_RUN=disabled

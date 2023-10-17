@@ -1,4 +1,4 @@
-import $ivy.`com.goyeau::mill-scalafix::0.2.10`
+import $ivy.`com.goyeau::mill-scalafix::0.3.1`
 import com.goyeau.mill.scalafix.ScalafixModule
 import mill._, scalalib._, scalafmt._
 
@@ -45,12 +45,13 @@ object odoo extends ScalaModule with StyleModule {
     ivy"com.lihaoyi::sourcecode:0.3.0",
     ivy"io.circe::circe-core:0.14.1",
     ivy"io.circe::circe-parser:0.14.1",
-    ivy"org.typelevel::log4cats-slf4j:2.5.0"
+    ivy"org.typelevel::log4cats-slf4j:2.5.0",
+    ivy"com.github.spullara.mustache.java:compiler:0.9.10"
   )
 
   override def runIvyDeps = Agg(ivy"ch.qos.logback:logback-classic:1.2.10")
 
-  object test extends Tests with TestModule.Munit with StyleModule {
+  object test extends ScalaTests with TestModule.Munit with StyleModule {
     override def ivyDeps: T[Agg[Dep]] = super.ivyDeps() ++ Agg(
       ivy"org.scalameta::munit:0.7.29",
       ivy"org.scalacheck::scalacheck:1.17.0",

@@ -9,11 +9,11 @@ import cats.syntax.all._
 import com.monovore.decline.{Argument, Command, Help, Opts}
 import fs2.io.file.Path
 import io.circe.Json
-import peschke.odoo.AppConfig.{AppCommand, AuthConfig, DryRun, LoginCache}
+import peschke.odoo.AppConfig.{AppCommand, AuthConfig, DryRun, LoginCache, Verbose}
 import peschke.odoo.models.Action
 import peschke.odoo.models.Action.{Fields, Read, Search, Write}
 import peschke.odoo.models.RpcServiceCall.ObjectService.{FieldName, Id, ModelName}
-import peschke.odoo.models.Template.TimeOfDay
+import peschke.odoo.models.Template.{PickingNameTemplate, TimeOfDay}
 import peschke.odoo.models.authentication.{ApiKey, Database, ServerUri, Username}
 
 import java.nio.file.InvalidPathException
@@ -174,7 +174,9 @@ object ArgumentParser {
           "time-of-day",
           help = "Only generate pickings for a specific time of day"
         ).orNone.map(_.flatten),
-        Opts.option[LocalDate]("override-date", help = "Pretend today is this date").orNone
+        Opts.option[LocalDate]("override-date", help = "Pretend today is this date").orNone,
+        Opts.option[TimeOfDay.MorningTime]("am-time", help = "Time of day to schedule AM pickings").orNone,
+        Opts.option[TimeOfDay.NightTime]("pm-time", help = "Time of day to schedule PM pickings").orNone
       ).mapN(AppCommand.CreatePickings.apply)
     }
 
@@ -202,7 +204,19 @@ object ArgumentParser {
       Opts
         .env[DryRun]("ODOO_DRY_RUN", help = "Don't make live calls to servers")
         .orElse(DryRun.Disabled.pure[Opts]),
-      Opts.env[LoginCache]("ODOO_LOGIN_CACHE", help = "File used to cache login session")
+      Opts
+        .env[Verbose](
+          "ODOO_VERBOSE",
+          help = "Enable verbose logging for calls. This includes the full curl, so only use this for local testing"
+        )
+        .orElse(Verbose.Disabled.pure[Opts]),
+      Opts.env[LoginCache]("ODOO_LOGIN_CACHE", help = "File used to cache login session"),
+      Opts
+        .env[PickingNameTemplate]("ODOO_PICKING_NAME_PREFIX", help = "Add a prefix to generated picking names")
+        .orNone,
+      Opts
+        .env[PickingNameTemplate]("ODOO_PICKING_NAME_SUFFIX", help = "Add a suffix to generated picking names")
+        .orNone
     ).mapN(AppConfig.apply)
 
   private val appConfigOpt: Opts[Either[JsonLoader.Source, AppConfig]] =

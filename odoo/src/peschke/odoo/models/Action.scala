@@ -4,6 +4,7 @@ import cats.data.{NonEmptyList, NonEmptyMap}
 import cats.syntax.all._
 import com.monovore.decline.Argument
 import io.circe.{Decoder, Encoder, Json}
+import io.circe.syntax._
 import peschke.odoo.models.RpcServiceCall.ObjectService.{FieldName, Id, ModelName}
 import peschke.odoo.utils.Circe._
 
@@ -62,16 +63,24 @@ object Action {
                     conditions: List[Search.Condition],
                     limitOpt: Option[Search.Limit]) extends Action
   object Search {
-    object Condition extends supertagged.NewType[List[String]] {
-      implicit val decoder: Decoder[Type] = Decoder[List[String]].map(apply(_))
-      implicit val encoder: Encoder[Type] = Encoder[List[String]].contramap(raw)
+    object Condition extends supertagged.NewType[List[Json]] {
+      implicit val decoder: Decoder[Type] = Decoder[List[Json]].map(apply(_))
+      implicit val encoder: Encoder[Type] = Encoder[List[Json]].contramap(raw)
 
       implicit val argument: Argument[Type] = Argument.from("json array") { raw =>
         io.circe.parser.parse(raw)
           .leftMap(_.message)
-          .flatMap(_.as[List[String]].leftMap(_.show))
+          .flatMap(_.as[List[Json]].leftMap(_.show))
           .map(apply(_))
           .toValidatedNel
+      }
+
+      object syntax {
+        implicit final class FieldNameConditionOps(private val fieldName: FieldName) extends AnyVal {
+          def is[A: Encoder](a: A): Condition = Condition(fieldName.asJson :: "=".asJson :: a.asJson :: Nil)
+          def in[A: Encoder](a0: A, aN: A*): Condition =
+            Condition(fieldName.asJson :: "in".asJson :: Json.fromValues((a0 :: aN.toList).map(_.asJson)) :: Nil)
+        }
       }
     }
     type Condition = Condition.Type

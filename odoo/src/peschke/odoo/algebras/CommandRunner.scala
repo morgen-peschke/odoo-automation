@@ -37,9 +37,12 @@ object CommandRunner {
               .fromAction(action)
               .flatMap(JsonRpc[F].call)
               .flatMap(r => logger.info(show"Result: $r"))
-          case cp @ AppCommand.CreatePickings(_, _, _, _) => PickingCreator[F].create(cp)
+          case cp @ AppCommand.CreatePickings(_, _, _, _, _, _) => PickingCreator[F].create(cp)
           case AppCommand.ReloadKnownIds =>
-            KnownIdsBuilder[F].build.map(_.asJson).flatMap(Console[F].println(_))
+            KnownIdsBuilder[F].build
+              .map(_.asJson)
+              .map(_.spaces2SortKeys)
+              .flatMap(Console[F].println(_))
         }
     }
 }

@@ -1,43 +1,55 @@
 package peschke.odoo
 
-import cats.Eq
+import cats.Show
 import cats.data.NonEmptySet
 import cats.syntax.all._
 import com.monovore.decline.Argument
-import io.circe.Decoder
-import peschke.odoo.AppConfig.{AppCommand, AuthConfig, DryRun, LoginCache}
-import peschke.odoo.models.Action
-import peschke.odoo.models.Template.TimeOfDay
+import io.circe.{Decoder, Encoder}
+import peschke.odoo.AppConfig.{AppCommand, AuthConfig, DryRun, LoginCache, Verbose}
+import peschke.odoo.models.Template.{PickingNameTemplate, TimeOfDay}
 import peschke.odoo.models.authentication.{ApiKey, Database, ServerUri, Username}
+import peschke.odoo.models.{Action, NewBoolean}
 import peschke.odoo.utils.Circe._
 
 import java.time.LocalDate
 
-final case class AppConfig(auth: AuthConfig, command: AppCommand, dryRun: DryRun, loginCache: LoginCache)
+final case class AppConfig(auth: AuthConfig,
+                           command: AppCommand,
+                           dryRun: DryRun,
+                           verbose: Verbose,
+                           loginCache: LoginCache,
+                           globalNamePrefixOpt: Option[PickingNameTemplate],
+                           globalNameSuffixOpt: Option[PickingNameTemplate]
+                          )
 object AppConfig {
   final case class AuthConfig(serverUrl: ServerUri,
                               username: Username,
                               database: Database,
                               apiKey: ApiKey)
 
-  sealed abstract class DryRun
+  sealed abstract class DryRun(val name: String)
   object DryRun {
-    case object Disabled extends DryRun
-    case object Enabled extends DryRun
-    case object Verbose extends DryRun
+    case object Enabled extends DryRun("TRUE")
+    case object Disabled extends DryRun("FALSE")
+    case object ReadOnly extends DryRun("READ-ONLY")
 
     def fromString(raw: String): Either[String, DryRun] = raw.toUpperCase match {
-      case "DISABLED" => Disabled.asRight
-      case "ENABLED" => Enabled.asRight
-      case "VERBOSE" => Verbose.asRight
-      case _ => s"Expected one of: Disabled,Enabled,Verbose (was: $raw)".asLeft
+      case "T" | Enabled.name => Enabled.asRight
+      case "F" | Disabled.name => Disabled.asRight
+      case "RO" | ReadOnly.name => ReadOnly.asRight
+      case _ => "Expected one of: 'true', 't', 'false', 'f', 'ro', or 'read-only'".asLeft
     }
 
-    implicit val eq: Eq[DryRun] = Eq.fromUniversalEquals
+    implicit val show: Show[DryRun] = Show.show(_.name)
+
     implicit val decoder: Decoder[DryRun] = Decoder[String].emap(fromString)
-    implicit val argument: Argument[DryRun] =
-      Argument.from("enabled|disabled|verbose")(fromString(_).toValidatedNel)
+    implicit val encoder: Encoder[DryRun] = Encoder[String].contramap(_.name)
+
+    implicit val argument: Argument[DryRun] = Argument.from("t|f|ro")(fromString(_).toValidatedNel)
   }
+
+  object Verbose extends NewBoolean
+  type Verbose = Verbose.Type
 
   object LoginCache extends supertagged.NewType[fs2.io.file.Path] {
     def fromString(raw: String): Either[String, Type] =
@@ -55,7 +67,9 @@ object AppConfig {
     final case class CreatePickings(template: JsonLoader.Source,
                                     knownIdsOpt: Option[JsonLoader.Source],
                                     times: Option[NonEmptySet[TimeOfDay]],
-                                    dateOverrideOpt: Option[LocalDate]
+                                    dateOverrideOpt: Option[LocalDate],
+                                    morningTimeOpt: Option[TimeOfDay.MorningTime],
+                                    nightTimeOpt: Option[TimeOfDay.NightTime]
                                    ) extends AppCommand
     object CreatePickings {
       implicit val decoder: Decoder[CreatePickings] = accumulatingDecoder { c =>
@@ -63,7 +77,9 @@ object AppConfig {
           c.downField("entries").asAcc[JsonLoader.Source],
           c.downField("knownIds").asAcc[Option[JsonLoader.Source]],
           c.downField("times").asAcc[Option[NonEmptySet[TimeOfDay]]],
-          c.downField("dateOverride").asAcc[Option[LocalDate]]
+          c.downField("dateOverride").asAcc[Option[LocalDate]],
+          c.downField("am-time").asAcc[Option[TimeOfDay.MorningTime]],
+          c.downField("pm-time").asAcc[Option[TimeOfDay.NightTime]]
         ).mapN(CreatePickings.apply)
       }
     }
@@ -91,7 +107,10 @@ object AppConfig {
       c.downField("auth").asAcc[AuthConfig],
       c.downField("command").asAcc[AppCommand],
       c.downField("dry-run").asAcc[Option[DryRun]].map(_.getOrElse(DryRun.Disabled)),
-      c.downField("login-cache").asAcc[LoginCache]
+      c.downField("verbose").asAcc[Option[Verbose]].map(_.getOrElse(Verbose.Disabled)),
+      c.downField("login-cache").asAcc[LoginCache],
+      c.downField("global-name-prefix").asAcc[Option[PickingNameTemplate]],
+      c.downField("global-name-suffix").asAcc[Option[PickingNameTemplate]]
     ).mapN(AppConfig.apply)
   }
 }

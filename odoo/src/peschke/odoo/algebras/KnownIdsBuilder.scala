@@ -7,6 +7,7 @@ import io.circe.{Decoder, DecodingFailure}
 import org.typelevel.log4cats.LoggerFactory
 import peschke.odoo.models.Action.Search
 import peschke.odoo.models.Action.Search.Limit
+import peschke.odoo.models.Action.Search.Condition.syntax._
 import peschke.odoo.models.RpcServiceCall.ObjectService.{FieldName, ModelName}
 import peschke.odoo.models.Template.{LocationId, PartnerId, PickingTypeId, ProductId}
 import peschke.odoo.models.{KnownIds, RpcServiceCall}
@@ -36,7 +37,7 @@ object KnownIdsBuilder {
       ServiceCallBuilder[F].fromAction(Search(
         model = model,
         fields = nameField :: Nil,
-        conditions = Search.Condition("active" :: "=" :: "true" :: Nil) :: Nil,
+        conditions = FieldName("active").is("true") :: Nil,
         limitOpt = none[Limit]
       ))
 

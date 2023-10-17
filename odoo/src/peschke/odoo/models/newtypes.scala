@@ -5,6 +5,25 @@ import cats.syntax.all._
 import com.monovore.decline.Argument
 import io.circe.{Decoder, Encoder, KeyDecoder, KeyEncoder}
 
+import java.time.LocalTime
+import java.time.format.{DateTimeFormatter, DateTimeParseException}
+
+trait NewBoolean extends supertagged.NewType[Boolean] {
+  val Enabled: Type = apply(true)
+  val Disabled: Type = apply(false)
+
+  implicit val show: Show[Type] = Show.show(raw(_).show)
+
+  implicit val decoder: Decoder[Type] = Decoder[Boolean].map(apply(_))
+  implicit val encoder: Encoder[Type] = Encoder[Boolean].contramap(raw)
+
+  implicit val argument: Argument[Type] = Argument.from("boolean")(_.toUpperCase match {
+    case "T" | "TRUE" => Enabled.valid
+    case "F" | "FALSE" => Disabled.valid
+    case _ => "Expected one of: 'true', 't', 'false', 'f'".invalidNel
+  })
+}
+
 trait NewString extends supertagged.NewType[String] {
   def fromString(raw: String): Either[String, Type]
 
@@ -66,4 +85,33 @@ abstract class PosDouble(description: String) extends NewDouble {
   def fromDouble(d: Double): Either[String, Type] =
     if (d <= 0d) s"$description must be greater than 0.0".asLeft
     else apply(d).asRight
+}
+
+abstract class NonNegativeDouble(description: String) extends NewDouble {
+  def fromDouble(d: Double): Either[String, Type] =
+    if (d < 0d) s"$description must be greater than or equal to than 0.0".asLeft
+    else apply(d).asRight
+}
+
+abstract class NewLocalTime(val name: String) extends supertagged.NewType[LocalTime] {
+  def fromLocalTime(t: LocalTime): Either[String, Type]
+
+  def fromString(s: String): Either[String, Type] =
+    Either
+      .catchOnly[DateTimeParseException](LocalTime.parse(s, NewLocalTime.formatter))
+      .leftMap(ex => s"Illegal $name: ${ex.getMessage}")
+      .flatMap(fromLocalTime(_).leftMap(e => s"Illegal $name: $e"))
+
+  implicit val show: Show[Type] = Show.show(raw(_).format(NewLocalTime.formatter))
+
+  implicit val decoder: Decoder[Type] = Decoder[String].emap(fromString)
+  implicit val encoder: Encoder[Type] = Encoder[String].contramap(raw(_).format(NewLocalTime.formatter))
+
+  implicit val argument: Argument[Type] = Argument.from(NewLocalTime.pattern) { raw =>
+    Argument[String].read(raw).andThen(fromString(_).toValidatedNel)
+  }
+}
+object NewLocalTime {
+  private val pattern = "HH:mm"
+  private val formatter = DateTimeFormatter.ofPattern(pattern)
 }

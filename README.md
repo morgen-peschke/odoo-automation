@@ -80,6 +80,7 @@ A very simple example for a daily morning delivery might look like this:
   {
     "person": "Jane Doe",
     "pickingNamePrefix": "JANE/TAKE",
+    "pickingName": "TAKE/{{today}}/Jane/{{timeOfDay}}/{{index}}",
     "pickings": [
       {
         "frequency": "daily",
@@ -98,17 +99,20 @@ A very simple example for a daily morning delivery might look like this:
 ]
 ```
 
-When there are multiple pickings, certain fields can be moved to the parent as a default:
+When there are multiple pickings, fields can be moved to the parent as a default:
 ```json
 [
   {
     "person": "Jane Doe",
-    "pickingNamePrefix": "JANE/TAKE",
-    "move_type": "direct",
-    "picking_type_id": "Jane: Deliveries",
-    "location_id": "JANE/Stock/Ready",
-    "location_dest_id": "Partners/Janet/Home",
-    "partner_id": "Janet Doe",
+    "common": {
+      "pickingNamePrefix": "JANE/TAKE",
+      "pickingName": "TAKE/{{today}}/Jane/{{timeOfDay}}/{{index}}",
+      "move_type": "direct",
+      "picking_type_id": "Jane: Deliveries",
+      "location_id": "JANE/Stock/Ready",
+      "location_dest_id": "Partners/Janet/Home",
+      "partner_id": "Janet Doe"
+    },
     "pickings": [
       {
         "frequency": "daily",
@@ -131,6 +135,29 @@ When there are multiple pickings, certain fields can be moved to the parent as a
         "moves": [
           {"product_id": "Foo", "product_uom_qty": 1}
         ]
+      }
+    ]
+  }
+]
+```
+
+When everything in a location needs to be moved, this can be specified:
+```json
+[
+  {
+    "person": "Jane Doe",
+    "pickingNamePrefix": "JANE/TAKE",
+    "pickingName": "TAKE/{{today}}/Jane/{{timeOfDay}}/{{index}}",
+    "pickings": [
+      {
+        "frequency": "daily",
+        "timeOfDay": "morning",
+        "move_type": "direct",
+        "picking_type_id": "Jane: Deliveries",
+        "location_id": "JANE/Stock/Ready",
+        "location_dest_id": "Partners/Janet",
+        "partner_id": "Janet Doe",
+        "moves": "all"
       }
     ]
   }
@@ -167,3 +194,4 @@ This adds a suffix to the generated name, and can be used to skip creating picki
 (though this is not the default behavior).
 
 This is a case-insensitive value, and can be `"Morning"` or `"AM"`, `"Noon"`, and `"Night"` or `"PM"`.
+

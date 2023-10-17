@@ -1,17 +1,15 @@
 package peschke.odoo.algebras
 
-import cats.{Functor, Show}
 import cats.effect.kernel.Concurrent
 import cats.syntax.all._
-import io.circe.{Decoder, Encoder, Json}
+import cats.{Monad, MonadThrow, Show}
 import io.circe.syntax._
+import io.circe.{Decoder, Encoder, Json}
 import org.http4s.circe.CirceEntityDecoder.circeEntityDecoder
-import org.http4s.circe.CirceEntityEncoder.circeEntityEncoder
 import org.http4s.client.Client
-import org.http4s.{Method, Request}
 import org.typelevel.log4cats.LoggerFactory
 import peschke.odoo.algebras.JsonRpc.RpcResponse
-import peschke.odoo.models.authentication.ServerUri
+import peschke.odoo.models.RpcServiceCall.{CommonService, ObjectService}
 import peschke.odoo.models.{BodyDecodingFailure, RpcServiceCall, UnexpectedStatus}
 import peschke.odoo.utils.Circe._
 
@@ -19,6 +17,8 @@ trait JsonRpc[F[_]] {
   def call(serviceCall: RpcServiceCall): F[RpcResponse]
 }
 object JsonRpc {
+  sealed trait Live
+  sealed trait Dummy
 
   final case class RpcResponse(jsonrpc: String, id: Option[Int], result: Json)
   implicit val responseDecoder: Decoder[RpcResponse] = accumulatingDecoder { c =>
@@ -39,53 +39,51 @@ object JsonRpc {
 
   def apply[F[_]](implicit JR: JsonRpc[F]): JR.type = JR
 
-  def default[F[_]: Concurrent](serverUri: ServerUri, client: Client[F]): JsonRpc[F] =
-    serviceCall => {
-      def request: Request[F] = baseRequest[F](serverUri).withEntity(requestBody(serviceCall))
-      client.run(request).use { res =>
+  def default[F[_]: Concurrent: RequestBuilder](client: Client[F]): JsonRpc[F] with Live = new JsonRpc[F] with Live {
+    override def call(serviceCall: RpcServiceCall): F[RpcResponse] =
+      RequestBuilder[F].request(serviceCall).flatMap(client.run(_).use { res =>
         if (res.status.isSuccess) res.as[RpcResponse].attempt.flatMap(_.fold(
-          throwable => fullCurl[F](request).flatMap(BodyDecodingFailure.liftTo[F, RpcResponse](_, throwable)),
+          throwable =>
+            RequestBuilder[F]
+              .requestCurl(serviceCall)
+              .flatMap(BodyDecodingFailure.liftTo[F, RpcResponse](_, throwable)),
           _.pure[F]
         ))
-        else fullCurl[F](request).flatMap(UnexpectedStatus.liftResponse[F, RpcResponse](res, _))
-      }
-    }
-
-  def dryRun[F[_]: Functor](mkResponse: RpcServiceCall => F[Json]): JsonRpc[F] =
-    mkResponse(_).map(RpcResponse("2.0", None, _))
-
-  def dryRunVerbose[F[_] : LoggerFactory : Concurrent](serverUri: ServerUri)
-                                                      (mkResponse: RpcServiceCall => F[Json]): JsonRpc[F] =
-    new JsonRpc[F] {
-      private val logger = LoggerFactory[F].getLogger
-
-      override def call(serviceCall: RpcServiceCall): F[RpcResponse] = {
-        val body = requestBody(serviceCall)
-        fullCurl[F](baseRequest(serverUri).withEntity(body))
-          .flatMap(curl => logger.info(s"[Dry Run]: $curl"))
-          .flatMap(_ => mkResponse(serviceCall).map(RpcResponse("2.0", None, _)))
-      }
-    }
-
-  private def fullCurl[F[_]: Concurrent](request: Request[F]): F[String] =
-    request.bodyText.compile.string.map { body =>
-    // Escaping shamelessly "borrowed" from org.http4s.internal.CurlConverter#escapeQuotationMarks
-    val bodyArg = if (body.isEmpty) "" else s" --data '${body.replaceAll("'", """'\\''""")}'"
-    s"${request.asCurl(_ => false)} \\\n  $bodyArg"
+        else
+          RequestBuilder[F]
+            .requestCurl(serviceCall)
+            .flatMap(UnexpectedStatus.liftResponse[F, RpcResponse](res, _))
+      })
   }
 
-  private def baseRequest[F[_]](serverUri: ServerUri): Request[F] = Request(
-    method = Method.POST,
-    uri = ServerUri.raw(serverUri)
-  )
+  def dryRun[F[_] : Monad: LoggerFactory](mkResponse: RpcServiceCall => F[Json]): JsonRpc[F] with Dummy =
+    new JsonRpc[F] with Dummy {
+      private val logger = LoggerFactory[F].getLogger
 
-  private def requestBody(serviceCall: RpcServiceCall): Json = Json.obj(
-    "jsonrpc" := "2.0",
-    "method" := "call",
-    "params" := Json.obj(
-      "service" := serviceCall.serviceName,
-      "method" := serviceCall.methodName,
-      "args" := serviceCall.args
-    )
-  )
+      override def call(serviceCall: RpcServiceCall): F[RpcResponse] =
+        mkResponse(serviceCall)
+          .flatTap(json => logger.debug(s"[Dry Run] ${json.noSpaces}"))
+          .map(RpcResponse("2.0", None, _))
+    }
+
+  def readOnly[F[_]](live: JsonRpc[F] with Live, dryRun: JsonRpc[F] with Dummy): JsonRpc[F] = {
+    case
+      serviceCall@(CommonService.Version |
+                   CommonService.Login(_, _, _) |
+                   ObjectService.FieldsGet(_, _, _) |
+                   ObjectService.SearchRead(_, _, _, _, _) |
+                   ObjectService.Read(_, _, _, _)) => live.call(serviceCall)
+    case serviceCall => dryRun.call(serviceCall)
+  }
+
+  def verbose[F[_]: MonadThrow: RequestBuilder: LoggerFactory](wrapped: JsonRpc[F]): JsonRpc[F] = new JsonRpc[F] {
+    private val logger = LoggerFactory[F].getLogger
+
+    override def call(serviceCall: RpcServiceCall): F[RpcResponse] =
+      wrapped.call(serviceCall).attemptTap { _ =>
+        RequestBuilder[F]
+          .requestCurl(serviceCall)
+          .flatMap(curl => logger.info(s"[Verbose] $curl"))
+      }
+  }
 }

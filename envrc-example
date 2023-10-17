@@ -5,4 +5,5 @@ export ODOO_USERNAME='user@example.com' # Login for user with API Key
 export ODOO_DATABASE='<db name>'        # See https://www.odoo.com/my/databases
 export ODOO_API_KEY='API key'           # Generate in Preferences > Account Security > API Keys
 export ODOO_LOGIN_CACHE='./session.json'
-export ODOO_DRY_RUN=disabled
+export ODOO_DRY_RUN=false
+export ODOO_VERBOSE=false

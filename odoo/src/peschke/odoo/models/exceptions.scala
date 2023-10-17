@@ -29,7 +29,7 @@ object UnexpectedStatus {
 }
 
 class UnexpectedResponse(operation: String, body: RpcResponse, causedBy: Exception)
-  extends RuntimeException(show"Unexpected response while $operation: $body", causedBy)
+  extends RuntimeException(show"Unexpected response while $operation: ${causedBy.getMessage}\n$body", causedBy)
 
 object UnexpectedResponse {
   def liftTo[F[_]: ApplicativeThrow, A](operation: String, body: RpcResponse, causedBy: Exception): F[A] =

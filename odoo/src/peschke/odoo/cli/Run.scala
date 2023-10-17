@@ -10,9 +10,8 @@ import io.circe.syntax._
 import org.http4s.ember.client.EmberClientBuilder
 import org.typelevel.log4cats.LoggerFactory
 import org.typelevel.log4cats.slf4j.Slf4jFactory
-import peschke.odoo.AppConfig.DryRun
-import peschke.odoo.algebras.{CommandRunner, Generator, JsonRpc, KnownIdsBuilder, LoginManager, PickingCreator, ServiceCallBuilder, TemplateDecoder}
-import peschke.odoo.models.RpcServiceCall
+import peschke.odoo.AppConfig.{DryRun, Verbose}
+import peschke.odoo.algebras.{CommandRunner, Generator, JsonRpc, KnownIdsBuilder, LoginManager, PickingCreator, PickingNameGenerator, RequestBuilder, ServiceCallBuilder, TemplateChecker, TemplateDecoder}
 import peschke.odoo.models.RpcServiceCall.{CommonService, ObjectService}
 
 import java.time.ZoneId
@@ -36,25 +35,39 @@ object Run extends IOApp {
         implicit val loginManager: LoginManager[IO] = LoginManager.default[IO](config.loginCache, config.auth)
         implicit val serviceCallBuilder: ServiceCallBuilder[IO] = ServiceCallBuilder.default[IO](config.auth)
         implicit val templateDecoder: TemplateDecoder[IO] = TemplateDecoder.default[IO]
+        implicit val requestBuilder: RequestBuilder[IO] = RequestBuilder.default[IO](config.auth.serverUrl)
         implicit val jsonRpc: JsonRpc[IO] = {
-          val idGen = Generator.usingRandom[IO, Json](_.nextIntBounded(10000).map(_.asJson))
-          val makeResponse: RpcServiceCall => IO[Json] = {
-            case CommonService.Version |
-                 ObjectService.FieldsGet(_, _, _) |
-                 ObjectService.SearchRead(_, _, _, _, _) |
-                 ObjectService.Read(_, _, _, _) |
-                 ObjectService.Write(_, _, _, _) => Json.obj().pure[IO]
-            case CommonService.Login(_, _, _) | ObjectService.Create(_, _, _) => idGen.create
+          def liveRpc = JsonRpc.default[IO](client)
+          def dryRunRpc = {
+            val idGen = Generator.usingRandom[IO, Json](_.nextIntBounded(10000).map(_.asJson))
+            JsonRpc.dryRun[IO] {
+              case CommonService.Version |
+                   ObjectService.FieldsGet(_, _, _) |
+                   ObjectService.SearchRead(_, _, _, _, _) |
+                   ObjectService.Read(_, _, _, _) |
+                   ObjectService.Write(_, _, _, _) => Json.obj().pure[IO]
+              case CommonService.Login(_, _, _) | ObjectService.Create(_, _, _) => idGen.create
+            }
           }
-          config.dryRun match {
-            case DryRun.Disabled => JsonRpc.default[IO](config.auth.serverUrl, client)
-            case DryRun.Enabled => JsonRpc.dryRun[IO](makeResponse)
-            case DryRun.Verbose => JsonRpc.dryRunVerbose[IO](config.auth.serverUrl)(makeResponse)
+          val runner = config.dryRun match {
+            case DryRun.Enabled => dryRunRpc
+            case DryRun.Disabled => liveRpc
+            case DryRun.ReadOnly => JsonRpc.readOnly(liveRpc, dryRunRpc)
+          }
+          config.verbose match {
+            case Verbose.Enabled => JsonRpc.verbose(runner)
+            case _ => runner
           }
         }
-        implicit val pickingCreator: PickingCreator[IO] = PickingCreator.default[IO](ZoneId.systemDefault())
+        implicit val pickingNameGenerator: PickingNameGenerator[IO] = PickingNameGenerator.default[IO](
+          globalNamePrefixOpt = config.globalNamePrefixOpt,
+          globalNameSuffixOpt = config.globalNameSuffixOpt
+        )
+        implicit val templateChecker: TemplateChecker[IO] = TemplateChecker.default[IO](ZoneId.systemDefault())
+        implicit val pickingCreator: PickingCreator[IO] = PickingCreator.default[IO]
         implicit val knownIdsBuilder: KnownIdsBuilder[IO] = KnownIdsBuilder.default[IO]
         implicit val commandRunner: CommandRunner[IO] = CommandRunner.default[IO]
+
         commandRunner.run(config.command).as(ExitCode.Success)
       }
     }

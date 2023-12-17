@@ -1,17 +1,16 @@
 package peschke.odoo
 
 import cats.Show
-import cats.data.NonEmptySet
+import cats.data.{NonEmptyList, NonEmptySet}
 import cats.syntax.all._
 import com.monovore.decline.Argument
 import io.circe.{Decoder, Encoder}
 import peschke.odoo.AppConfig.{AppCommand, AuthConfig, DryRun, LoginCache, Verbose}
+import peschke.odoo.models.Template.TimeOfDay.ScheduleAtOverrides
 import peschke.odoo.models.Template.{PickingNameTemplate, TimeOfDay}
 import peschke.odoo.models.authentication.{ApiKey, Database, ServerUri, Username}
-import peschke.odoo.models.{Action, NewBoolean}
+import peschke.odoo.models.{Action, DateOverride, NewBoolean}
 import peschke.odoo.utils.Circe._
-
-import java.time.LocalDate
 
 final case class AppConfig(auth: AuthConfig,
                            command: AppCommand,
@@ -67,9 +66,8 @@ object AppConfig {
     final case class CreatePickings(template: JsonLoader.Source,
                                     knownIdsOpt: Option[JsonLoader.Source],
                                     times: Option[NonEmptySet[TimeOfDay]],
-                                    dateOverrideOpt: Option[LocalDate],
-                                    morningTimeOpt: Option[TimeOfDay.MorningTime],
-                                    nightTimeOpt: Option[TimeOfDay.NightTime]
+                                    dateOverridesOpt: Option[NonEmptySet[DateOverride]],
+                                    scheduleAtOverrides: ScheduleAtOverrides
                                    ) extends AppCommand
     object CreatePickings {
       implicit val decoder: Decoder[CreatePickings] = accumulatingDecoder { c =>
@@ -77,9 +75,11 @@ object AppConfig {
           c.downField("entries").asAcc[JsonLoader.Source],
           c.downField("knownIds").asAcc[Option[JsonLoader.Source]],
           c.downField("times").asAcc[Option[NonEmptySet[TimeOfDay]]],
-          c.downField("dateOverride").asAcc[Option[LocalDate]],
-          c.downField("am-time").asAcc[Option[TimeOfDay.MorningTime]],
-          c.downField("pm-time").asAcc[Option[TimeOfDay.NightTime]]
+          c.downField("dateOverrides").asAcc[Option[NonEmptyList[DateOverride]]].map(_.map(_.toNes)),
+          (
+            c.downField("am-time").asAcc[Option[TimeOfDay.MorningTime]],
+            c.downField("pm-time").asAcc[Option[TimeOfDay.NightTime]]
+          ).tupled.map(ScheduleAtOverrides(_))
         ).mapN(CreatePickings.apply)
       }
     }

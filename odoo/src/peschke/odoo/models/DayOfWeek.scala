@@ -7,17 +7,27 @@ import io.circe.Decoder
 
 import java.time.{LocalDate, DayOfWeek => JDayOfWeek}
 
-sealed abstract class DayOfWeek(val shortName: String, val longName: String) extends Product with Serializable {
-  def unapply(str: String): Boolean = str.equalsIgnoreCase(shortName) || str.equalsIgnoreCase(longName)
+sealed abstract class DayOfWeek(val shortName: String)
+  extends enumeratum.EnumEntry
+    with Product
+    with Serializable {
+
+  def fullName: String = entryName
+
+  private lazy val normalized: List[String] = List(fullName.toUpperCase, shortName.toUpperCase)
+
+  def unapply(str: String): Boolean =
+    normalized.contains(str) || ((str.length > 1) && normalized.exists(_.startsWith(str)))
 }
-object DayOfWeek {
-  case object Monday extends DayOfWeek("Mon", "Monday")
-  case object Tuesday extends DayOfWeek("Tue", "Tuesday")
-  case object Wednesday extends DayOfWeek("Wed", "Wednesday")
-  case object Thursday extends DayOfWeek("Thu", "Thursday")
-  case object Friday extends DayOfWeek("Fri", "Friday")
-  case object Saturday extends DayOfWeek("Sat", "Saturday")
-  case object Sunday extends DayOfWeek("Sun", "Sunday")
+object DayOfWeek extends enumeratum.Enum[DayOfWeek] {
+
+  case object Monday extends DayOfWeek("Mon")
+  case object Tuesday extends DayOfWeek("Tue")
+  case object Wednesday extends DayOfWeek("Wed")
+  case object Thursday extends DayOfWeek("Thu")
+  case object Friday extends DayOfWeek("Fri")
+  case object Saturday extends DayOfWeek("Sat")
+  case object Sunday extends DayOfWeek("Sun")
 
   def ofDay(day: LocalDate): DayOfWeek = day.getDayOfWeek match {
     case JDayOfWeek.MONDAY => Monday
@@ -27,6 +37,17 @@ object DayOfWeek {
     case JDayOfWeek.FRIDAY => Friday
     case JDayOfWeek.SATURDAY => Saturday
     case JDayOfWeek.SUNDAY => Sunday
+  }
+
+  def parse(string: String): Either[String, DayOfWeek] = string.toUpperCase match {
+    case Monday() => Monday.asRight
+    case Tuesday() => Tuesday.asRight
+    case Wednesday() => Wednesday.asRight
+    case Thursday() => Thursday.asRight
+    case Friday() => Friday.asRight
+    case Saturday() => Saturday.asRight
+    case Sunday() => Sunday.asRight
+    case _ => "Expected unique prefix of Monday, Tuesday, Wednesday, Thursday, Friday, Saturday, or Sunday".asLeft
   }
 
   implicit val dayOfWeekOrder: Order[DayOfWeek] = Order.by {
@@ -42,14 +63,7 @@ object DayOfWeek {
   val WeekDays: NonEmptySet[DayOfWeek] = NonEmptySet.of(Monday, Tuesday, Wednesday, Thursday, Friday)
   val WeekEnd: NonEmptySet[DayOfWeek] = NonEmptySet.of(Saturday, Sunday)
 
-  implicit val dayOfWeekDecoder: Decoder[DayOfWeek] = Decoder[String].map(_.toUpperCase).emap {
-    case Monday() => Monday.asRight
-    case Tuesday() => Tuesday.asRight
-    case Wednesday() => Wednesday.asRight
-    case Thursday() => Thursday.asRight
-    case Friday() => Friday.asRight
-    case Saturday() => Saturday.asRight
-    case Sunday() => Sunday.asRight
-    case _ => "Expected one of Mon, Tue, Wed, Thu, Fri, Sat, or Sun".asLeft
-  }
+  implicit val dayOfWeekDecoder: Decoder[DayOfWeek] = Decoder[String].map(_.toUpperCase).emap(parse)
+
+  override val values: IndexedSeq[DayOfWeek] = findValues.sorted(dayOfWeekOrder.toOrdering)
 }

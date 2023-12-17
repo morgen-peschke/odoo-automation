@@ -66,7 +66,7 @@ object PickingNameGenerator {
             "index" -> index.show,
             "dayOfWeek" -> dayOfWeek.shortName,
             "dayOfWeekShort" -> dayOfWeek.shortName,
-            "dayOfWeekFull" -> dayOfWeek.longName
+            "dayOfWeekFull" -> dayOfWeek.fullName
           ).asJava)
           out.show
         }

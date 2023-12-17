@@ -11,7 +11,7 @@ import org.http4s.ember.client.EmberClientBuilder
 import org.typelevel.log4cats.LoggerFactory
 import org.typelevel.log4cats.slf4j.Slf4jFactory
 import peschke.odoo.AppConfig.{DryRun, Verbose}
-import peschke.odoo.algebras.{CommandRunner, Generator, JsonRpc, KnownIdsBuilder, LoginManager, PickingCreator, PickingNameGenerator, RequestBuilder, ServiceCallBuilder, TemplateChecker, TemplateDecoder}
+import peschke.odoo.algebras.{CommandRunner, DateOverrideResolver, Generator, JsonRpc, KnownIdsBuilder, LoginManager, PickingCreator, PickingNameGenerator, RequestBuilder, ServiceCallBuilder, TemplateChecker, TemplateDecoder}
 import peschke.odoo.models.RpcServiceCall.{CommonService, ObjectService}
 
 import java.time.ZoneId
@@ -63,7 +63,9 @@ object Run extends IOApp {
           globalNamePrefixOpt = config.globalNamePrefixOpt,
           globalNameSuffixOpt = config.globalNameSuffixOpt
         )
-        implicit val templateChecker: TemplateChecker[IO] = TemplateChecker.default[IO](ZoneId.systemDefault())
+        implicit val dateOverrideResolver: DateOverrideResolver[IO] =
+          DateOverrideResolver.default[IO](ZoneId.systemDefault())
+        implicit val templateChecker: TemplateChecker[IO] = TemplateChecker.default[IO]
         implicit val pickingCreator: PickingCreator[IO] = PickingCreator.default[IO]
         implicit val knownIdsBuilder: KnownIdsBuilder[IO] = KnownIdsBuilder.default[IO]
         implicit val commandRunner: CommandRunner[IO] = CommandRunner.default[IO]

@@ -5,6 +5,7 @@ import cats.data.{NonEmptyList, NonEmptySet}
 import cats.syntax.all._
 import io.circe.{Decoder, Encoder}
 import peschke.odoo.models.Template.Entry
+import supertagged.NewType
 
 import java.time.format.{DateTimeFormatter, DateTimeParseException}
 import java.time.{LocalDateTime, LocalTime}
@@ -62,14 +63,14 @@ object Template {
     case object Noon extends TimeOfDay("NN")
     case object Night extends TimeOfDay("PM")
 
-    def fromString(raw: String): Either[String, TimeOfDay] = raw.toUpperCase match {
+    def parse(raw: String): Either[String, TimeOfDay] = raw match {
       case Morning() => Morning.asRight
       case Noon() => Noon.asRight
       case Night() => Night.asRight
       case _ => "Expected on of: Morning, AM, Noon, Night, or PM".asLeft
     }
 
-    implicit val decoder: Decoder[TimeOfDay] = Decoder[String].emap(fromString)
+    implicit val decoder: Decoder[TimeOfDay] = Decoder[String].emap(parse)
 
     implicit val order: Order[TimeOfDay] = Order.by {
       case Morning => 1
@@ -96,6 +97,24 @@ object Template {
         else s"$name must be after noon".asLeft
     }
     type NightTime = NightTime.Type
+
+    object ScheduleAt extends NewType[(MorningTime, NightTime)] {
+      implicit final class NameOps(private val t: Type) extends AnyVal {
+        def am: MorningTime = raw(t)._1
+        def pm: NightTime = raw(t)._2
+      }
+    }
+    type ScheduleAt = ScheduleAt.Type
+
+    object ScheduleAtOverrides extends NewType[(Option[MorningTime], Option[NightTime])] {
+      implicit final class ConvertOpts(private val t: Type) extends AnyVal {
+        def asScheduleAt: ScheduleAt = ScheduleAt((
+          raw(t)._1.getOrElse(TimeOfDay.MorningTime.Default),
+          raw(t)._2.getOrElse(TimeOfDay.NightTime.Default)
+        ))
+      }
+    }
+    type ScheduleAtOverrides = ScheduleAtOverrides.Type
 
     override def values: IndexedSeq[TimeOfDay] = findValues
   }

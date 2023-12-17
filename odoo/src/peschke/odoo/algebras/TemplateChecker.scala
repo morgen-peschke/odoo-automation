@@ -1,61 +1,57 @@
 package peschke.odoo.algebras
 
-import cats.{MonadThrow, Order}
 import cats.data.{NonEmptyList, NonEmptySet}
-import cats.effect.kernel.Clock
 import cats.syntax.all._
+import cats.{MonadThrow, Order}
 import io.circe.Decoder
 import org.typelevel.log4cats.LoggerFactory
 import peschke.odoo.algebras.PickingNameGenerator.{EntryIndex, PickingIndex}
 import peschke.odoo.algebras.TemplateChecker.QuantityOnHand.CurrentQuantity
 import peschke.odoo.models.Action.Search.Condition.syntax._
 import peschke.odoo.models.RpcServiceCall.ObjectService.{FieldName, ModelName}
-import peschke.odoo.models.Template.TimeOfDay.{MorningTime, NightTime}
+import peschke.odoo.models.Template.TimeOfDay.{ScheduleAt, ScheduleAtOverrides}
 import peschke.odoo.models.Template._
-import peschke.odoo.models.{Template, _}
+import peschke.odoo.models._
 import peschke.odoo.utils.Circe._
 
-import java.time.{LocalDate, LocalDateTime, LocalTime, ZoneId, ZonedDateTime}
+import java.time.{LocalDate, LocalDateTime, LocalTime}
 
 trait TemplateChecker[F[_]]{
   def check(template: Template,
             timesOpt: Option[NonEmptySet[TimeOfDay]],
-            dateOverrideOpt: Option[LocalDate],
-            morningTimeOpt: Option[MorningTime],
-            nightTimeOpt: Option[NightTime]): F[Option[CheckedTemplate]]
+            dateOverridesOpt: Option[NonEmptySet[DateOverride]],
+            scheduleAtOverrides: ScheduleAtOverrides): F[Option[NonEmptyList[CheckedTemplate]]]
 }
 object TemplateChecker {
   def apply[F[_]](implicit TC: TemplateChecker[F]): TC.type = TC
 
   def default[
-    F[_] : ServiceCallBuilder : JsonRpc : MonadThrow : LoggerFactory : Clock: PickingNameGenerator
-  ](zoneId: ZoneId): TemplateChecker[F] =
+    F[_] : ServiceCallBuilder : JsonRpc : MonadThrow : LoggerFactory : PickingNameGenerator : DateOverrideResolver
+  ]: TemplateChecker[F] =
     new TemplateChecker[F] {
       private val logger = LoggerFactory[F].getLogger
 
       override def check(template: Template,
                          timesOpt: Option[NonEmptySet[TimeOfDay]],
-                         dateOverrideOpt: Option[LocalDate],
-                         morningTimeOpt: Option[MorningTime],
-                         nightTimeOpt: Option[NightTime]): F[Option[CheckedTemplate]] =
-        dateOverrideOpt.map(_.pure[F]).getOrElse {
-          Clock[F].realTimeInstant.map(ZonedDateTime.ofInstant(_, zoneId).toLocalDate)
-        }.flatMap(checkTemplate(
-          template,
-          _,
-          timesOpt.getOrElse(TimeOfDay.All),
-          morningTimeOpt.getOrElse(MorningTime.Default),
-          nightTimeOpt.getOrElse(NightTime.Default)
-        ))
+                         dateOverridesOpt: Option[NonEmptySet[DateOverride]],
+                         scheduleAtOverrides: ScheduleAtOverrides): F[Option[NonEmptyList[CheckedTemplate]]] =
+        DateOverrideResolver[F]
+          .resolveAll(dateOverridesOpt)
+          .flatMap { dates =>
+            val time = timesOpt.getOrElse(TimeOfDay.All)
+            val scheduleAt = scheduleAtOverrides.asScheduleAt
+            dates
+              .traverse(checkTemplate(template, _, time, scheduleAt))
+              .map(_.sequence)
+          }
 
       private def checkTemplate(template: Template,
                                 today: LocalDate,
                                 times: NonEmptySet[TimeOfDay],
-                                morningTime: MorningTime,
-                                nightTime: NightTime): F[Option[CheckedTemplate]] =
+                                scheduleAt: ScheduleAt): F[Option[CheckedTemplate]] =
         template.entries.toList
           .traverseWithIndexM { (entry, index) =>
-            checkEntry(entry, today, times, EntryIndex(index), morningTime, nightTime)
+            checkEntry(entry, today, times, EntryIndex(index), scheduleAt)
           }
           .map(_.flatten)
           .map(NonEmptyList.fromList(_).map(CheckedTemplate(_)))
@@ -64,12 +60,11 @@ object TemplateChecker {
                              today: LocalDate,
                              times: NonEmptySet[TimeOfDay],
                              entryIndex: EntryIndex,
-                             morningTime: MorningTime,
-                             nightTime: NightTime): F[Option[CheckedTemplate.Entry]] =
+                             scheduleAt: ScheduleAt): F[Option[CheckedTemplate.Entry]] =
         logger.debug(show"Checking entries for ${entry.label}") >>
           entry.pickings.toList
             .traverseWithIndexM { (template, pickingIndex) =>
-              checkPicking(template, today, times, entryIndex -> PickingIndex(pickingIndex), morningTime, nightTime)
+              checkPicking(template, today, times, entryIndex -> PickingIndex(pickingIndex), scheduleAt)
             }
             .map(_.flatten)
             .flatMap(NonEmptyList.fromList(_) match {
@@ -81,8 +76,7 @@ object TemplateChecker {
                                today: LocalDate,
                                times: NonEmptySet[Template.TimeOfDay],
                                index: (EntryIndex, PickingIndex),
-                               morningTime: MorningTime,
-                               nightTime: NightTime): F[Option[CheckedTemplate.PickingTemplate]] =
+                               scheduleAt: ScheduleAt): F[Option[CheckedTemplate.PickingTemplate]] =
         PickingNameGenerator[F].generate(picking, today, index)
           .flatMap { name =>
             val shouldSkipBecauseOfDate = picking.frequency match {
@@ -104,9 +98,9 @@ object TemplateChecker {
                       name,
                       picking.frequency,
                       ScheduledDate(LocalDateTime.of(today, picking.timeOfDay match {
-                        case TimeOfDay.Morning => TimeOfDay.MorningTime.raw(morningTime)
+                        case TimeOfDay.Morning => TimeOfDay.MorningTime.raw(scheduleAt.am)
                         case TimeOfDay.Noon => LocalTime.NOON
-                        case TimeOfDay.Night => TimeOfDay.NightTime.raw(nightTime)
+                        case TimeOfDay.Night => TimeOfDay.NightTime.raw(scheduleAt.pm)
                       })),
                       picking.moveType,
                       picking.pickingTypeId,

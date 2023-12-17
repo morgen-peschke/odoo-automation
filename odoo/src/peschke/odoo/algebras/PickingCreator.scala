@@ -88,13 +88,13 @@ object PickingCreator {
           .flatMap(TemplateChecker[F].check(
             _,
             createPickings.times,
-            createPickings.dateOverrideOpt,
-            createPickings.morningTimeOpt,
-            createPickings.nightTimeOpt
+            createPickings.dateOverridesOpt,
+            createPickings.scheduleAtOverrides
           ))
           .flatMap {
             case None => logger.info("Nothing to create")
-            case Some(checkedTemplate) => processTemplate(checkedTemplate)
+            case Some(checkedTemplates) =>
+              checkedTemplates.traverse(processTemplate).map(_.reduce)
           }
     }
 

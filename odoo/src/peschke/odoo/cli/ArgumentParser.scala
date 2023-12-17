@@ -1,25 +1,25 @@
 package peschke.odoo.cli
 
-import peschke.odoo.{AppConfig, JsonLoader}
-import peschke.odoo.JsonLoader.Source
-import peschke.odoo.JsonLoader.Source.StdIn
-import cats.{Monad, Order}
-import cats.data.{NonEmptyList, NonEmptySet, Validated}
+import cats.Monad
+import cats.data.{NonEmptyList, NonEmptySet, Validated, ValidatedNel}
 import cats.syntax.all._
 import com.monovore.decline.{Argument, Command, Help, Opts}
 import fs2.io.file.Path
 import io.circe.Json
 import peschke.odoo.AppConfig.{AppCommand, AuthConfig, DryRun, LoginCache, Verbose}
-import peschke.odoo.models.Action
+import peschke.odoo.JsonLoader.Source
+import peschke.odoo.JsonLoader.Source.StdIn
 import peschke.odoo.models.Action.{Fields, Read, Search, Write}
 import peschke.odoo.models.RpcServiceCall.ObjectService.{FieldName, Id, ModelName}
+import peschke.odoo.models.Template.TimeOfDay.ScheduleAtOverrides
 import peschke.odoo.models.Template.{PickingNameTemplate, TimeOfDay}
 import peschke.odoo.models.authentication.{ApiKey, Database, ServerUri, Username}
+import peschke.odoo.models.{Action, DateOverride, DayOfWeek}
+import peschke.odoo.{AppConfig, JsonLoader}
 
 import java.nio.file.InvalidPathException
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
-import scala.collection.immutable.SortedSet
 
 trait ArgumentParser[F[_]] {
   def parse(args: Seq[String]): F[Either[Help,AppConfig]]
@@ -106,20 +106,34 @@ object ArgumentParser {
     }
   }
 
-  implicit val timeOfDaySetArgument: Argument[Option[NonEmptySet[TimeOfDay]]] =
-    Argument.from("time0,time1,...timeN") { raw =>
-      raw.split(',').toList.traverse(TimeOfDay.fromString)
-        .map(SortedSet.from(_)(Order[TimeOfDay].toOrdering))
-        .map(NonEmptySet.fromSet)
-        .toValidatedNel
+  private def csvOpt[A](entryFormat: String, metaVar: String, parser: String => ValidatedNel[String, A]): Argument[NonEmptyList[A]] =
+    Argument.from(s"${metaVar}0,${metaVar}1,...${metaVar}N $metaVar:$entryFormat") { raw =>
+      NonEmptyList
+        .fromList(raw.split(',').toList)
+        .toValidNel("Expected non-empty list of comma-separated entries")
+        .andThen(_.traverse(parser))
     }
 
-  implicit val localDateArgument: Argument[LocalDate] =
-    Argument.from("yyyy-MM-dd") { raw =>
-      Either.catchNonFatal(LocalDate.parse(raw, DateTimeFormatter.ISO_LOCAL_DATE))
-        .leftMap(_.getMessage)
-        .toValidatedNel
-    }
+  implicit val timeOfDaySetArgument: Argument[NonEmptySet[TimeOfDay]] = {
+    val entryNames = TimeOfDay.values.map(t => s"${t.shortName}|${t.fullName}").mkString("|")
+    csvOpt(entryNames, "time", TimeOfDay.parse(_).toValidatedNel)
+      .map(_.toNes)
+  }
+
+  implicit val dayOfWeekArgument: Argument[NonEmptyList[DayOfWeek]] = {
+    val entryNames = DayOfWeek.values.map(t => t.fullName).mkString("unique prefix of \"","\", \"","\"")
+    csvOpt(entryNames, "dayOfWeek", DayOfWeek.parse(_).toValidatedNel)
+  }
+
+  implicit val intList: Argument[NonEmptyList[Int]] =
+    csvOpt("[0-9]", "i", s => s.toIntOption.filter(_ > 0).toValidNel(s"$s is not a positive integer"))
+
+  implicit val localDateArgument: Argument[NonEmptyList[LocalDate]] = {
+    def parse(s: String) =
+      Either.catchNonFatal(LocalDate.parse(s, DateTimeFormatter.ISO_LOCAL_DATE)).leftMap(_.getMessage)
+
+    csvOpt("yyyy-MM-dd", "date", parse(_).toValidatedNel)
+  }
 
   private val readOpts: Opts[Action] =
     Opts.subcommand("read", help = "Read a record") {
@@ -165,18 +179,52 @@ object ArgumentParser {
       ).mapN(Action.Create.apply)
     }
 
+  private val dateOverridesOpt: Opts[Option[NonEmptySet[DateOverride]]] = {
+    val today: Opts[NonEmptyList[DateOverride]] =
+      Opts.flag("today", help = "Create pickets for today (default)")
+        .as(DateOverride.Today.pure[NonEmptyList])
+
+    val yesterday: Opts[NonEmptyList[DateOverride]] =
+      Opts.flag("yesterday", help = "Create pickings for yesterday")
+        .as(DateOverride.DaysAgo(1).pure[NonEmptyList])
+
+    val daysAgo: Opts[NonEmptyList[DateOverride]] =
+      Opts.options[NonEmptyList[Int]]("days-ago", help = "Create pickings for a date N days ago")
+        .map(_.flatten.map(DateOverride.DaysAgo))
+
+    val last: Opts[NonEmptyList[DateOverride]] =
+      Opts
+        .options[NonEmptyList[DayOfWeek]]("last", help = "Create pickings for the immediately previous day of the week")
+        .map(_.flatten.map(DateOverride.Last))
+
+    val exactly: Opts[NonEmptyList[DateOverride]] =
+      Opts
+        .options[NonEmptyList[LocalDate]]("use-date", help = "Create pickings for this date")
+        .map(_.flatten.map(DateOverride.Exactly))
+
+    (
+      today.orNone,
+      yesterday.orNone,
+      daysAgo.orNone,
+      last.orNone,
+      exactly.orNone
+    ).mapN(_ :: _ :: _ :: _ :: _ :: Nil).map(_.flatten).map(NonEmptyList.fromList).map(_.map(_.flatten.toNes))
+  }
+
   private val createPickingOpts: Opts[AppCommand] =
     Opts.subcommand("pickings", help = "Create pickings and moves from a template") {
       (
         Opts.option[Source]("template", help = "Template with pickings and moves"),
         Opts.option[Source]("known-ids", help = "File with mappings from strings to known ids").orNone,
-        Opts.option[Option[NonEmptySet[TimeOfDay]]](
+        Opts.option[NonEmptySet[TimeOfDay]](
           "time-of-day",
           help = "Only generate pickings for a specific time of day"
-        ).orNone.map(_.flatten),
-        Opts.option[LocalDate]("override-date", help = "Pretend today is this date").orNone,
-        Opts.option[TimeOfDay.MorningTime]("am-time", help = "Time of day to schedule AM pickings").orNone,
-        Opts.option[TimeOfDay.NightTime]("pm-time", help = "Time of day to schedule PM pickings").orNone
+        ).orNone,
+        dateOverridesOpt,
+        (
+          Opts.option[TimeOfDay.MorningTime]("am-time", help = "Time of day to schedule AM pickings").orNone,
+          Opts.option[TimeOfDay.NightTime]("pm-time", help = "Time of day to schedule PM pickings").orNone
+        ).tupled.map(ScheduleAtOverrides(_))
       ).mapN(AppCommand.CreatePickings.apply)
     }
 

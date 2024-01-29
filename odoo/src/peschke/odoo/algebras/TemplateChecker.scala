@@ -61,14 +61,14 @@ object TemplateChecker {
                              times: NonEmptySet[TimeOfDay],
                              entryIndex: EntryIndex,
                              scheduleAt: ScheduleAt): F[Option[CheckedTemplate.Entry]] =
-        logger.debug(show"Checking entries for ${entry.label}") >>
+        logger.info(show"Checking entries for ${entry.label}") >>
           entry.pickings.toList
             .traverseWithIndexM { (template, pickingIndex) =>
               checkPicking(template, today, times, entryIndex -> PickingIndex(pickingIndex), scheduleAt)
             }
             .map(_.flatten)
             .flatMap(NonEmptyList.fromList(_) match {
-              case None => logger.debug(s"Skipping ${entry.label}, no pickings need to be created").as(none)
+              case None => logger.info(s"Skipping ${entry.label}, no pickings need to be created").as(none)
               case Some(pickings) => CheckedTemplate.Entry(entry.label, pickings).some.pure[F]
             })
 
@@ -86,13 +86,13 @@ object TemplateChecker {
 
             val shouldSkipBecauseOfTime = !times.contains(picking.timeOfDay)
 
-            if (picking.disabled) logger.debug(show"Skipping $name because it is disabled").as(none)
-            else if (shouldSkipBecauseOfDate) logger.debug(show"Skipping $name because of the day of the week").as(none)
-            else if (shouldSkipBecauseOfTime) logger.debug(show"Skipping $name because of the time of day").as(none)
+            if (picking.disabled) logger.info(show"Skipping $name because it is disabled").as(none)
+            else if (shouldSkipBecauseOfDate) logger.info(show"Skipping $name because of the day of the week").as(none)
+            else if (shouldSkipBecauseOfTime) logger.info(show"Skipping $name because of the time of day").as(none)
             else
               checkMoveSet(picking)
                 .flatMap(NonEmptyList.fromList(_) match {
-                  case None => logger.debug(show"Skipping $name because no moves need to be created").as(none)
+                  case None => logger.info(show"Skipping $name because no moves need to be created").as(none)
                   case Some(moves) =>
                     CheckedTemplate.PickingTemplate(
                       name,
@@ -130,7 +130,7 @@ object TemplateChecker {
           picking.locationDestId,
           move.quantityType
         ).flatMap {
-            case None => logger.debug(show"Skipping ${move.name}: current stock is at or over max quantity").as(none)
+            case None => logger.info(show"Skipping ${move.name}: current stock is at or over max quantity").as(none)
             case Some(productQuantity) =>
               CheckedTemplate.MoveTemplate(move.name, move.productId, productQuantity).some.pure[F]
           }

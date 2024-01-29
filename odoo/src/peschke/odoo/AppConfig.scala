@@ -12,13 +12,16 @@ import peschke.odoo.models.authentication.{ApiKey, Database, ServerUri, Username
 import peschke.odoo.models.{Action, DateOverride, NewBoolean}
 import peschke.odoo.utils.Circe._
 
+import scala.concurrent.duration.{Duration, DurationInt, FiniteDuration}
+
 final case class AppConfig(auth: AuthConfig,
                            command: AppCommand,
                            dryRun: DryRun,
                            verbose: Verbose,
                            loginCache: LoginCache,
                            globalNamePrefixOpt: Option[PickingNameTemplate],
-                           globalNameSuffixOpt: Option[PickingNameTemplate]
+                           globalNameSuffixOpt: Option[PickingNameTemplate],
+                           minIntervalBetweenRequests: FiniteDuration
                           )
 object AppConfig {
   final case class AuthConfig(serverUrl: ServerUri,
@@ -102,6 +105,15 @@ object AppConfig {
     ).mapN(AuthConfig.apply)
   }
 
+  implicit val finiteDurationDecoder: Decoder[FiniteDuration] = Decoder[String].emap { raw =>
+    Either.catchOnly[NumberFormatException](Duration(raw))
+      .leftMap(_ => s"Invalid duration: $raw")
+      .flatMap {
+        case duration: FiniteDuration => duration.asRight
+        case _ => "Expected finite duration".asLeft
+      }
+  }
+
   implicit val decoder: Decoder[AppConfig] = accumulatingDecoder { c =>
     (
       c.downField("auth").asAcc[AuthConfig],
@@ -110,7 +122,8 @@ object AppConfig {
       c.downField("verbose").asAcc[Option[Verbose]].map(_.getOrElse(Verbose.Disabled)),
       c.downField("login-cache").asAcc[LoginCache],
       c.downField("global-name-prefix").asAcc[Option[PickingNameTemplate]],
-      c.downField("global-name-suffix").asAcc[Option[PickingNameTemplate]]
+      c.downField("global-name-suffix").asAcc[Option[PickingNameTemplate]],
+      c.downField("min-request-interval").asAcc[Option[FiniteDuration]].map(_.getOrElse(1.second))
     ).mapN(AppConfig.apply)
   }
 }

@@ -1,17 +1,22 @@
 package peschke.odoo.algebras
 
-import cats.effect.kernel.Concurrent
+import cats.effect.Temporal
+import cats.effect.kernel.Resource
 import cats.syntax.all._
 import cats.{Monad, MonadThrow, Show}
 import io.circe.syntax._
 import io.circe.{Decoder, Encoder, Json}
 import org.http4s.circe.CirceEntityDecoder.circeEntityDecoder
 import org.http4s.client.Client
-import org.typelevel.log4cats.LoggerFactory
+import org.http4s.{Response, Status}
+import org.typelevel.log4cats.{LoggerFactory, SelfAwareStructuredLogger}
 import peschke.odoo.algebras.JsonRpc.RpcResponse
 import peschke.odoo.models.RpcServiceCall.{CommonService, ObjectService}
 import peschke.odoo.models.{BodyDecodingFailure, RpcServiceCall, UnexpectedStatus}
 import peschke.odoo.utils.Circe._
+import upperbound.Limiter
+
+import scala.concurrent.duration.FiniteDuration
 
 trait JsonRpc[F[_]] {
   def call(serviceCall: RpcServiceCall): F[RpcResponse]
@@ -39,22 +44,44 @@ object JsonRpc {
 
   def apply[F[_]](implicit JR: JsonRpc[F]): JR.type = JR
 
-  def default[F[_]: Concurrent: RequestBuilder](client: Client[F]): JsonRpc[F] with Live = new JsonRpc[F] with Live {
-    override def call(serviceCall: RpcServiceCall): F[RpcResponse] =
-      RequestBuilder[F].request(serviceCall).flatMap(client.run(_).use { res =>
-        if (res.status.isSuccess) res.as[RpcResponse].attempt.flatMap(_.fold(
+  def default[F[_]: Temporal: RequestBuilder: LoggerFactory](client: Client[F],
+                                                             limiter: Limiter[F],
+                                                             recoveryDelay: FiniteDuration): JsonRpc[F] with Live =
+    new JsonRpc[F] with Live {
+      private val logger: SelfAwareStructuredLogger[F] = LoggerFactory[F].getLogger
+
+      private def resetDelay: Resource[F, Unit] =
+        Resource.eval(logger.warn(s"Hit request limit, attempting to reset the limiter by sleeping $recoveryDelay")) >>
+          Resource.sleep(recoveryDelay)
+
+      private def parseResult(res: Response[F], serviceCall: RpcServiceCall): F[RpcResponse] =
+        res.as[RpcResponse].attempt.flatMap(_.fold(
           throwable =>
             RequestBuilder[F]
               .requestCurl(serviceCall)
               .flatMap(BodyDecodingFailure.liftTo[F, RpcResponse](_, throwable)),
           _.pure[F]
         ))
-        else
-          RequestBuilder[F]
-            .requestCurl(serviceCall)
-            .flatMap(UnexpectedStatus.liftResponse[F, RpcResponse](res, _))
-      })
-  }
+
+      override def call(serviceCall: RpcServiceCall): F[RpcResponse] =
+        RequestBuilder[F].request(serviceCall).flatMap { req =>
+          limiter.submit(
+            client
+              .run(req)
+              .flatMap { res =>
+                if (res.status === Status.TooManyRequests) resetDelay >> client.run(req)
+                else res.pure[Resource[F, *]]
+              }
+              .use { res =>
+                if (res.status.isSuccess) parseResult(res, serviceCall)
+                else
+                  RequestBuilder[F]
+                    .requestCurl(serviceCall)
+                    .flatMap(UnexpectedStatus.liftResponse[F, RpcResponse](res, _))
+              }
+          )
+        }
+    }
 
   def dryRun[F[_] : Monad: LoggerFactory](mkResponse: RpcServiceCall => F[Json]): JsonRpc[F] with Dummy =
     new JsonRpc[F] with Dummy {

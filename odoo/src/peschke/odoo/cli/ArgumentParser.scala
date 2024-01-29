@@ -20,6 +20,7 @@ import peschke.odoo.{AppConfig, JsonLoader}
 import java.nio.file.InvalidPathException
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
+import scala.concurrent.duration.{DurationInt, FiniteDuration}
 
 trait ArgumentParser[F[_]] {
   def parse(args: Seq[String]): F[Either[Help,AppConfig]]
@@ -126,7 +127,7 @@ object ArgumentParser {
   }
 
   implicit val intList: Argument[NonEmptyList[Int]] =
-    csvOpt("[0-9]", "i", s => s.toIntOption.filter(_ > 0).toValidNel(s"$s is not a positive integer"))
+    csvOpt("[0-9]", "i", s => s.toIntOption.filter(_ >= 0).toValidNel(s"$s is not a positive integer"))
 
   implicit val localDateArgument: Argument[NonEmptyList[LocalDate]] = {
     def parse(s: String) =
@@ -264,7 +265,10 @@ object ArgumentParser {
         .orNone,
       Opts
         .env[PickingNameTemplate]("ODOO_PICKING_NAME_SUFFIX", help = "Add a suffix to generated picking names")
-        .orNone
+        .orNone,
+      Opts
+        .env[FiniteDuration]("ODOO_MIN_INTERVAL_BETWEEN_REQUESTS", help = "Minimum delay between API requests")
+        .orElse(1.second.pure[Opts])
     ).mapN(AppConfig.apply)
 
   private val appConfigOpt: Opts[Either[JsonLoader.Source, AppConfig]] =

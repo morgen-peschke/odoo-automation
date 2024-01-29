@@ -46,7 +46,8 @@ object odoo extends ScalaModule with StyleModule {
     ivy"io.circe::circe-core:0.14.1",
     ivy"io.circe::circe-parser:0.14.1",
     ivy"org.typelevel::log4cats-slf4j:2.5.0",
-    ivy"com.github.spullara.mustache.java:compiler:0.9.10"
+    ivy"com.github.spullara.mustache.java:compiler:0.9.10",
+    ivy"org.systemfw::upperbound:0.5.0"
   )
 
   override def runIvyDeps = Agg(ivy"ch.qos.logback:logback-classic:1.2.10")

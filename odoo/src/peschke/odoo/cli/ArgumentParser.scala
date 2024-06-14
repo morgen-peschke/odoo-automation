@@ -14,18 +14,24 @@ import peschke.odoo.models.RpcServiceCall.ObjectService.{FieldName, Id, ModelNam
 import peschke.odoo.models.Template.TimeOfDay.ScheduleAtOverrides
 import peschke.odoo.models.Template.{PickingNameTemplate, TimeOfDay}
 import peschke.odoo.models.authentication.{ApiKey, Database, ServerUri, Username}
-import peschke.odoo.models.{Action, DateOverride, DayOfWeek}
+import peschke.odoo.models.{Action, DateOverride, DayOfWeek, LabelFilter}
 import peschke.odoo.{AppConfig, JsonLoader}
 
 import java.nio.file.InvalidPathException
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import scala.concurrent.duration.{DurationInt, FiniteDuration}
+import scala.util.matching.Regex
 
 trait ArgumentParser[F[_]] {
   def parse(args: Seq[String]): F[Either[Help,AppConfig]]
 }
 object ArgumentParser {
+
+  private implicit val regexArg: Argument[Regex] =
+    Argument.from("regular-expression") { raw =>
+      Validated.catchNonFatal(raw.r).leftMap(_.getMessage).toValidatedNel
+    }
 
   private implicit val settingsArg: Argument[Source] =
     Argument.from("json:config-json|file:path|-")(_.split(':').toList match {
@@ -212,6 +218,52 @@ object ArgumentParser {
     ).mapN(_ :: _ :: _ :: _ :: _ :: Nil).map(_.flatten).map(NonEmptyList.fromList).map(_.map(_.flatten.toNes))
   }
 
+  private val labelFilterOpts: Opts[Option[NonEmptyList[LabelFilter]]] =
+    (
+      Opts
+        .options[String](
+        "label-is",
+        help =
+          """Only create pickings that exactly match this label
+            |
+            |When multiple --label-* options given, labels that match any filter are included""".stripMargin
+        )
+        .map(_.map(LabelFilter.Exact))
+        .orEmpty,
+      Opts
+        .options[String](
+          "label-starts-with",
+          help =
+            """Only create pickings that start with this substring
+              |
+              |When multiple --label-* options given, labels that match any filter are included""".stripMargin
+        )
+        .map(_.map(LabelFilter.StartsWith))
+        .orEmpty,
+      Opts
+        .options[String](
+          "label-contains",
+          help =
+            """Only create pickings that contain this substring
+              |
+              |When multiple --label-* options given, labels that match any filter are included""".stripMargin
+        )
+        .map(_.map(LabelFilter.Contains))
+        .orEmpty,
+      Opts
+        .options[Regex](
+          "label-matches",
+          help =
+            """Only create pickings that match this regex
+              |
+              |When multiple --label-* options given, labels that match any filter are included""".stripMargin
+        )
+        .map(_.map(LabelFilter.Matches))
+        .orEmpty
+    ).mapN { (exact, startsWith, contains, matches) =>
+      NonEmptyList.fromList(exact.concat(startsWith).concat(contains).concat(matches))
+    }
+
   private val createPickingOpts: Opts[AppCommand] =
     Opts.subcommand("pickings", help = "Create pickings and moves from a template") {
       (
@@ -225,7 +277,8 @@ object ArgumentParser {
         (
           Opts.option[TimeOfDay.MorningTime]("am-time", help = "Time of day to schedule AM pickings").orNone,
           Opts.option[TimeOfDay.NightTime]("pm-time", help = "Time of day to schedule PM pickings").orNone
-        ).tupled.map(ScheduleAtOverrides(_))
+        ).tupled.map(ScheduleAtOverrides(_)),
+        labelFilterOpts
       ).mapN(AppCommand.CreatePickings.apply)
     }
 

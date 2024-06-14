@@ -6,7 +6,7 @@ import peschke.odoo.models.Template._
 
 final case class CheckedTemplate(entries: NonEmptyList[Entry])
 object CheckedTemplate {
-  final case class Entry(label: PersonName, pickings: NonEmptyList[PickingTemplate])
+  final case class Entry(label: EntryLabel, pickings: NonEmptyList[PickingTemplate])
 
   object PickingName extends NonEmptyString("Picking name")
   type PickingName = PickingName.Type

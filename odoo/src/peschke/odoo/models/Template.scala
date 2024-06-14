@@ -12,8 +12,12 @@ import java.time.{LocalDateTime, LocalTime}
 
 final case class Template (entries: NonEmptyList[Entry])
 object Template {
-  object PersonName extends NonEmptyString("Person name")
-  type PersonName = PersonName.Type
+  object EntryLabel extends NonEmptyString("Person name") {
+    implicit final class Ops(private val t: Type) extends AnyVal {
+      def string: String = raw(t)
+    }
+  }
+  type EntryLabel = EntryLabel.Type
 
   object PickingNameTemplate extends NonEmptyString("Picking name template") {
     override def fromString(raw: String): Either[String, Type] =
@@ -22,7 +26,7 @@ object Template {
 
   type PickingNameTemplate = PickingNameTemplate.Type
 
-  final case class Entry(label: PersonName,
+  final case class Entry(label: EntryLabel,
                          pickings: NonEmptyList[PickingTemplate])
 
   object MoveType extends NonEmptyString("move_type")
@@ -62,12 +66,15 @@ object Template {
     case object Morning extends TimeOfDay("AM")
     case object Noon extends TimeOfDay("NN")
     case object Night extends TimeOfDay("PM")
+    case object AnyTime extends TimeOfDay("ANY") {
+      override def entryName: String = "ANY"
+    }
 
     def parse(raw: String): Either[String, TimeOfDay] = raw match {
       case Morning() => Morning.asRight
       case Noon() => Noon.asRight
       case Night() => Night.asRight
-      case _ => "Expected on of: Morning, AM, Noon, Night, or PM".asLeft
+      case _ => "Expected on of: Morning, AM, Noon, Night, PM, or ANY".asLeft
     }
 
     implicit val decoder: Decoder[TimeOfDay] = Decoder[String].emap(parse)
@@ -76,9 +83,10 @@ object Template {
       case Morning => 1
       case Noon => 2
       case Night => 3
+      case AnyTime => 4
     }
 
-    val All: NonEmptySet[TimeOfDay] = NonEmptySet.of(Morning, Noon, Night)
+    val All: NonEmptySet[TimeOfDay] = NonEmptySet.of(Morning, Noon, Night, AnyTime)
 
     object MorningTime extends NewLocalTime("time in AM") {
       val Default: Type = apply(LocalTime.of(9, 0))

@@ -45,7 +45,8 @@ object PickingCreator {
               Picking.PartnerId -> picking.partnerId.asJson,
               Picking.LocationId -> picking.locationId.asJson,
               Picking.LocationDestId -> picking.locationDestId.asJson,
-              Picking.ScheduledDate -> picking.scheduledDate.asJson
+              Picking.ScheduledDate -> picking.scheduledDate.asJson //,
+              // Picking.ImmediateTransfer -> false.asJson
             )
           ))
           .flatMap(JsonRpc[F].call)
@@ -89,7 +90,8 @@ object PickingCreator {
             _,
             createPickings.times,
             createPickings.dateOverridesOpt,
-            createPickings.scheduleAtOverrides
+            createPickings.scheduleAtOverrides,
+            createPickings.labelFilters
           ))
           .flatMap {
             case None => logger.info("Nothing to create")
@@ -111,6 +113,7 @@ object PickingCreator {
     val LocationId: FieldName = FieldName("location_id")
     val LocationDestId: FieldName = FieldName("location_dest_id")
     val ScheduledDate: FieldName = FieldName("scheduled_date")
+    val ImmediateTransfer: FieldName = FieldName("immediate_transfer")
   }
 
   private object Move {

@@ -14,6 +14,7 @@ object Frequency {
     fixed("daily").as(Daily),
     fixed("weekdays").as(Weekly(DayOfWeek.WeekDays)),
     fixed("weekends").as(Weekly(DayOfWeek.WeekEnd)),
-    Decoder[NonEmptySet[DayOfWeek]].map(Weekly)
+    Decoder[NonEmptySet[DayOfWeek]].map(Weekly),
+    Decoder[DayOfWeek].map(NonEmptySet.one(_)).map(Weekly)
   )
 }

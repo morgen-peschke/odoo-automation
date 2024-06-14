@@ -73,7 +73,7 @@ object Run extends IOApp {
           )
           implicit val dateOverrideResolver: DateOverrideResolver[IO] =
             DateOverrideResolver.default[IO](ZoneId.systemDefault())
-          implicit val templateChecker: TemplateChecker[IO] = TemplateChecker.default[IO]
+          implicit val templateChecker: TemplateChecker[IO] = TemplateChecker.default[IO](ZoneId.systemDefault())
           implicit val pickingCreator: PickingCreator[IO] = PickingCreator.default[IO]
           implicit val knownIdsBuilder: KnownIdsBuilder[IO] = KnownIdsBuilder.default[IO]
           implicit val commandRunner: CommandRunner[IO] = CommandRunner.default[IO]

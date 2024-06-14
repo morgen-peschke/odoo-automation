@@ -3,9 +3,9 @@ package peschke.odoo.algebras
 import cats.Monad
 import cats.data.NonEmptyList
 import cats.syntax.all._
-import io.circe.{Decoder, DecodingFailure}
+import io.circe.{ACursor, Decoder, DecodingFailure}
 import peschke.odoo.JsonLoader
-import peschke.odoo.models.Template.{Entry, LocationDestId, LocationId, MoveName, MoveTemplate, MoveTemplateSet, MoveType, PartnerId, PersonName, PickingNameTemplate, PickingTemplate, PickingTypeId, ProductId, ProductQuantity, QuantityType, TimeOfDay}
+import peschke.odoo.models.Template._
 import peschke.odoo.models.{Frequency, KnownIds, Template}
 import peschke.odoo.utils.Circe._
 
@@ -62,14 +62,20 @@ object TemplateDecoder {
       })
       val partnerIdDecoder = wrap[PartnerId](knownIds.partners.get)
       accumulatingDecoder { c =>
+        def asIfDefined[A: Decoder](cursor: ACursor): Option[Decoder.AccumulatingResult[A]] =
+          if (cursor.focus.isEmpty) none else cursor.asAcc[A].some
+
+        def ifMissingOrFieldOrDefault[A: Decoder](name: String, default: A): Decoder.AccumulatingResult[A] =
+          asIfDefined[A](c.downField(name))
+            .orElse(asIfDefined[A](c.up.up.downField("common").downField(name)))
+            .getOrElse(default.valid)
+
         def fieldOrDefault[A: Decoder](name: String): Decoder.AccumulatingResult[A] =
-          c.downField(name).asAcc[A].findValid {
-            c.up.up.downField("common").downField(name).asAcc[A]
-          }
+          asIfDefined[A](c.downField(name)).getOrElse(c.up.up.downField("common").downField(name).asAcc[A])
 
         (
-          fieldOrDefault[Frequency]("frequency"),
-          fieldOrDefault[TimeOfDay]("timeOfDay"),
+          ifMissingOrFieldOrDefault[Frequency]("frequency", Frequency.Daily),
+          ifMissingOrFieldOrDefault[TimeOfDay]("timeOfDay", TimeOfDay.AnyTime),
           fieldOrDefault[PickingNameTemplate]("pickingName"),
           fieldOrDefault[MoveType]("move_type"),
           fieldOrDefault("picking_type_id")(pickingTypeIdDecoder),
@@ -85,7 +91,7 @@ object TemplateDecoder {
     private def mkEntryDecoder(implicit pickingDecoder: Decoder[PickingTemplate]): Decoder[Entry] =
       accumulatingDecoder { c =>
         (
-          c.downField("label").asAcc[PersonName],
+          c.downField("label").asAcc[EntryLabel],
           c.downField("pickings").asAcc[NonEmptyList[PickingTemplate]]
         ).mapN(Entry)
       }

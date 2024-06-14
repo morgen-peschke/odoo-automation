@@ -20,7 +20,7 @@ object KnownIdsBuilder {
   def apply[F[_]](implicit KI: KnownIdsBuilder[F]): KI.type = KI
 
   def default[F[_]: ServiceCallBuilder: JsonRpc: MonadThrow: LoggerFactory]: KnownIdsBuilder[F] = new KnownIdsBuilder[F] {
-    private val logger = LoggerFactory[F].getLogger
+    private val logger = LoggerFactory[F].getLoggerFromClass(classOf[KnownIdsBuilder[F]])
     private val name: FieldName = FieldName("name")
 
     def decoder[Id: Decoder](nameField: FieldName): Decoder[List[(String, Id)]] = {

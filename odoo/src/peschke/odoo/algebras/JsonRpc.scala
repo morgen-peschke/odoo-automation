@@ -48,7 +48,7 @@ object JsonRpc {
                                                              limiter: Limiter[F],
                                                              recoveryDelay: FiniteDuration): JsonRpc[F] with Live =
     new JsonRpc[F] with Live {
-      private val logger: SelfAwareStructuredLogger[F] = LoggerFactory[F].getLogger
+      private val logger: SelfAwareStructuredLogger[F] = LoggerFactory[F].getLoggerFromClass(classOf[JsonRpc[F]])
 
       private def resetDelay: Resource[F, Unit] =
         Resource.eval(logger.warn(s"Hit request limit, attempting to reset the limiter by sleeping $recoveryDelay")) >>
@@ -85,7 +85,7 @@ object JsonRpc {
 
   def dryRun[F[_] : Monad: LoggerFactory](mkResponse: RpcServiceCall => F[Json]): JsonRpc[F] with Dummy =
     new JsonRpc[F] with Dummy {
-      private val logger = LoggerFactory[F].getLogger
+      private val logger = LoggerFactory[F].getLoggerFromClass(classOf[JsonRpc[F]])
 
       override def call(serviceCall: RpcServiceCall): F[RpcResponse] =
         mkResponse(serviceCall)
@@ -104,7 +104,7 @@ object JsonRpc {
   }
 
   def verbose[F[_]: MonadThrow: RequestBuilder: LoggerFactory](wrapped: JsonRpc[F]): JsonRpc[F] = new JsonRpc[F] {
-    private val logger = LoggerFactory[F].getLogger
+    private val logger = LoggerFactory[F].getLoggerFromClass(classOf[JsonRpc[F]])
 
     override def call(serviceCall: RpcServiceCall): F[RpcResponse] =
       wrapped.call(serviceCall).attemptTap { _ =>

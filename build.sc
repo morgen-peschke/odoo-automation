@@ -1,6 +1,9 @@
 import $ivy.`com.goyeau::mill-scalafix::0.3.1`
 import com.goyeau.mill.scalafix.ScalafixModule
-import mill._, scalalib._, scalafmt._
+import mill._
+import mill.scalalib.publish.{Developer, License, PomSettings, VersionControl}
+import scalalib._
+import scalafmt._
 
 trait StyleModule extends ScalafmtModule with ScalafixModule {
   override def scalacOptions =
@@ -30,7 +33,7 @@ trait StyleModule extends ScalafmtModule with ScalafixModule {
   override def scalaDocOptions = super.scalaDocOptions() ++ Seq("-no-link-warnings")
 }
 
-object odoo extends ScalaModule with StyleModule {
+object odoo extends ScalaModule with StyleModule with PublishModule {
   def scalaVersion = "2.13.8"
 
   override def ivyDeps: T[Agg[Dep]] = super.ivyDeps() ++ Agg(
@@ -46,6 +49,7 @@ object odoo extends ScalaModule with StyleModule {
     ivy"io.circe::circe-core:0.14.1",
     ivy"io.circe::circe-parser:0.14.1",
     ivy"org.typelevel::log4cats-slf4j:2.5.0",
+    ivy"org.slf4j:slf4j-simple:2.0.13",
     ivy"com.github.spullara.mustache.java:compiler:0.9.10",
     ivy"org.systemfw::upperbound:0.5.0"
   )
@@ -59,4 +63,15 @@ object odoo extends ScalaModule with StyleModule {
       ivy"org.scalameta::munit-scalacheck:0.7.29"
     )
   }
+
+  override def pomSettings: T[PomSettings] = PomSettings(
+    description = "odoo-automation",
+    organization = "com.peschke",
+    url = "https://github.com/morgen-peschke/odoo-automation",
+    licenses = Seq(License.`GPL-3.0`),
+    versionControl = VersionControl.github("morgen-peschke", "odoo-automation"),
+    developers = Seq(Developer("morgen-peschke", "Morgen Peschke", "https://github.com/morgen-peschke"))
+  )
+
+  override def publishVersion: T[String] = "0.1.0"
 }

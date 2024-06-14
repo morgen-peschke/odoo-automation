@@ -21,7 +21,7 @@ object CommandRunner {
     : ServiceCallBuilder: JsonRpc: LoginManager: PickingCreator: KnownIdsBuilder
   ]: CommandRunner[F] =
     new CommandRunner[F] {
-      private val logger = LoggerFactory[F].getLogger
+      private val logger = LoggerFactory[F].getLoggerFromClass(classOf[CommandRunner[F]])
 
       override def run(command: AppCommand): F[Unit] =
         command match {

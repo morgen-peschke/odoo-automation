@@ -32,7 +32,7 @@ object TemplateChecker {
     F[_] : ServiceCallBuilder : JsonRpc : MonadThrow : LoggerFactory : PickingNameGenerator : DateOverrideResolver : Clock
   ](zoneId: ZoneId): TemplateChecker[F] =
     new TemplateChecker[F] {
-      private val logger = LoggerFactory[F].getLogger
+      private val logger = LoggerFactory[F].getLoggerFromClass(classOf[TemplateChecker[F]])
       override def check(template: Template,
                          timesOpt: Option[NonEmptySet[TimeOfDay]],
                          dateOverridesOpt: Option[NonEmptySet[DateOverride]],

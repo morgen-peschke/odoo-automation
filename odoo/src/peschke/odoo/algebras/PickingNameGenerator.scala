@@ -35,7 +35,7 @@ object PickingNameGenerator {
   def default[F[_]: MonadThrow: LoggerFactory](globalNamePrefixOpt: Option[PickingNameTemplate],
                                                globalNameSuffixOpt: Option[PickingNameTemplate]): PickingNameGenerator[F] =
     new PickingNameGenerator[F] {
-      private val logger = LoggerFactory[F].getLogger
+      private val logger = LoggerFactory[F].getLoggerFromClass(classOf[PickingNameGenerator[F]])
       private implicit val localDateShow: Show[LocalDate] = {
         val formatter = DateTimeFormatter.ISO_LOCAL_DATE
         Show.show(_.format(formatter))

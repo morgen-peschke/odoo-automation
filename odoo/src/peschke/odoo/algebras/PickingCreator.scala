@@ -20,7 +20,7 @@ object PickingCreator {
     F[_] : ServiceCallBuilder : JsonRpc : MonadThrow : LoggerFactory : TemplateDecoder : TemplateChecker
   ]: PickingCreator[F] =
     new PickingCreator[F] {
-      private val logger = LoggerFactory[F].getLogger
+      private val logger = LoggerFactory[F].getLoggerFromClass(classOf[PickingCreator[F]])
       private def processTemplate(template: CheckedTemplate): F[Unit] =
         template.entries.traverse(processEntry).map(_.reduce)
 

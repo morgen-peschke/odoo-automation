@@ -3,7 +3,9 @@ package peschke.odoo.models
 import cats.Order
 import cats.data.NonEmptySet
 import cats.syntax.all._
+import com.monovore.decline.Argument
 import io.circe.Decoder
+import peschke.odoo.utils.ArgumentHelpers
 
 import java.time.{LocalDate, DayOfWeek => JDayOfWeek}
 
@@ -13,11 +15,6 @@ sealed abstract class DayOfWeek(val shortName: String)
     with Serializable {
 
   def fullName: String = entryName
-
-  private lazy val normalized: List[String] = List(fullName.toUpperCase, shortName.toUpperCase)
-
-  def unapply(str: String): Boolean =
-    normalized.contains(str) || ((str.length > 1) && normalized.exists(_.startsWith(str)))
 }
 object DayOfWeek extends enumeratum.Enum[DayOfWeek] {
 
@@ -39,16 +36,8 @@ object DayOfWeek extends enumeratum.Enum[DayOfWeek] {
     case JDayOfWeek.SUNDAY => Sunday
   }
 
-  def parse(string: String): Either[String, DayOfWeek] = string.toUpperCase match {
-    case Monday() => Monday.asRight
-    case Tuesday() => Tuesday.asRight
-    case Wednesday() => Wednesday.asRight
-    case Thursday() => Thursday.asRight
-    case Friday() => Friday.asRight
-    case Saturday() => Saturday.asRight
-    case Sunday() => Sunday.asRight
-    case _ => "Expected unique prefix of Monday, Tuesday, Wednesday, Thursday, Friday, Saturday, or Sunday".asLeft
-  }
+  def parse(string: String): Either[String, DayOfWeek] =
+    Argument[DayOfWeek].read(string).toEither.leftMap(_.mkString_("\n"))
 
   implicit val dayOfWeekOrder: Order[DayOfWeek] = Order.by {
     case Monday => 1
@@ -63,7 +52,8 @@ object DayOfWeek extends enumeratum.Enum[DayOfWeek] {
   val WeekDays: NonEmptySet[DayOfWeek] = NonEmptySet.of(Monday, Tuesday, Wednesday, Thursday, Friday)
   val WeekEnd: NonEmptySet[DayOfWeek] = NonEmptySet.of(Saturday, Sunday)
 
-  implicit val dayOfWeekDecoder: Decoder[DayOfWeek] = Decoder[String].map(_.toUpperCase).emap(parse)
-
   override val values: IndexedSeq[DayOfWeek] = findValues.sorted(dayOfWeekOrder.toOrdering)
+
+  implicit val argument: Argument[DayOfWeek] = ArgumentHelpers.enumArgument[DayOfWeek]
+  implicit val dayOfWeekDecoder: Decoder[DayOfWeek] = Decoder[String].emap(parse)
 }

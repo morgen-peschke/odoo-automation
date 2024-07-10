@@ -12,12 +12,20 @@ import java.time.{LocalDateTime, LocalTime}
 
 final case class Template (entries: NonEmptyList[Entry])
 object Template {
-  object EntryLabel extends NonEmptyString("Person name") {
+  object EntryLabel extends NonEmptyString("Label") {
     implicit final class Ops(private val t: Type) extends AnyVal {
       def string: String = raw(t)
     }
   }
   type EntryLabel = EntryLabel.Type
+
+  object Tag extends NonEmptyString("Tag") {
+    override implicit val order: Order[Type] = Order.by(_.string.toLowerCase)
+    implicit final class Ops(private val t: Type) extends AnyVal {
+      def string: String = raw(t)
+    }
+  }
+  type Tag = Tag.Type
 
   object PickingNameTemplate extends NonEmptyString("Picking name template") {
     override def fromString(raw: String): Either[String, Type] =
@@ -27,6 +35,7 @@ object Template {
   type PickingNameTemplate = PickingNameTemplate.Type
 
   final case class Entry(label: EntryLabel,
+                         tags: List[Tag],
                          pickings: NonEmptyList[PickingTemplate])
 
   object MoveType extends NonEmptyString("move_type")

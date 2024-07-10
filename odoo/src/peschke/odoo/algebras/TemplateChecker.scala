@@ -22,7 +22,8 @@ trait TemplateChecker[F[_]]{
             timesOpt: Option[NonEmptySet[TimeOfDay]],
             dateOverridesOpt: Option[NonEmptySet[DateOverride]],
             scheduleAtOverrides: ScheduleAtOverrides,
-            labelFilters: Option[NonEmptyList[LabelFilter]]
+            labelFilters: Option[NonEmptyList[LabelFilter]],
+            tagFilter: TagFilter
            ): F[Option[NonEmptyList[CheckedTemplate]]]
 }
 object TemplateChecker {
@@ -37,13 +38,14 @@ object TemplateChecker {
                          timesOpt: Option[NonEmptySet[TimeOfDay]],
                          dateOverridesOpt: Option[NonEmptySet[DateOverride]],
                          scheduleAtOverrides: ScheduleAtOverrides,
-                         labelFilters: Option[NonEmptyList[LabelFilter]]): F[Option[NonEmptyList[CheckedTemplate]]] =
+                         labelFilters: Option[NonEmptyList[LabelFilter]],
+                         tagFilter: TagFilter): F[Option[NonEmptyList[CheckedTemplate]]] =
         for {
           dates <- DateOverrideResolver[F].resolveAll(dateOverridesOpt)
           checkTimestamp <- Clock[F].realTimeInstant.map(ZonedDateTime.ofInstant(_, zoneId))
           time = timesOpt.getOrElse(TimeOfDay.All)
           scheduleAt = scheduleAtOverrides.asScheduleAt
-          checked <- dates.traverse(checkTemplate(template, _, time, scheduleAt, checkTimestamp, labelFilters))
+          checked <- dates.traverse(checkTemplate(template, _, time, scheduleAt, checkTimestamp, labelFilters, tagFilter))
         } yield checked.sequence
 
       private def checkTemplate(template: Template,
@@ -51,11 +53,12 @@ object TemplateChecker {
                                 times: NonEmptySet[TimeOfDay],
                                 scheduleAt: ScheduleAt,
                                 checkTimestamp: ZonedDateTime,
-                                labelFilters: Option[NonEmptyList[LabelFilter]]
+                                labelFilters: Option[NonEmptyList[LabelFilter]],
+                                tagFilter: TagFilter
                                ): F[Option[CheckedTemplate]] =
         template.entries.toList
           .traverseWithIndexM { (entry, index) =>
-            checkEntry(entry, today, times, EntryIndex(index), scheduleAt, checkTimestamp, labelFilters)
+            checkEntry(entry, today, times, EntryIndex(index), scheduleAt, checkTimestamp, labelFilters, tagFilter)
           }
           .map(_.flatten)
           .map(NonEmptyList.fromList(_).map(CheckedTemplate(_)))
@@ -66,9 +69,10 @@ object TemplateChecker {
                              entryIndex: EntryIndex,
                              scheduleAt: ScheduleAt,
                              checkTimestamp: ZonedDateTime,
-                             labelFilters: Option[NonEmptyList[LabelFilter]]): F[Option[CheckedTemplate.Entry]] =
+                             labelFilters: Option[NonEmptyList[LabelFilter]],
+                             tagFilter: TagFilter): F[Option[CheckedTemplate.Entry]] =
         logger.info(show"Checking entries for ${entry.label}") >>
-          Monad[F].ifM(checkLabel(entry, labelFilters))(
+          Monad[F].ifM((checkLabel(entry, labelFilters), checkTags(entry, tagFilter)).mapN(_ && _))(
             ifFalse = none[CheckedTemplate.Entry].pure[F],
             ifTrue =
               entry
@@ -119,6 +123,27 @@ object TemplateChecker {
                 case false => logger.info(s"Skipping entry because of label filters: ${entry.label}")
               }
           }
+
+      private def checkTags(entry: Template.Entry, tagFilter: TagFilter): F[Boolean] = {
+        def loop(tf: TagFilter): Option[TagFilter] =
+          tf match {
+            case TagFilter.True => none
+            case TagFilter.TaggedWith(tags) =>
+              NonEmptyList
+                .fromList(tags.filterNot(t => entry.tags.exists(_ === t)))
+                .map(TagFilter.TaggedWith)
+            case TagFilter.Not(filter) =>
+              loop(filter) match {
+                case Some(_) => None
+                case None => tf.some
+              }
+            case TagFilter.And(a, b) => loop(a).orElse(loop(b))
+          }
+
+        loop(tagFilter).fold(true.pure[F]) { tf =>
+          logger.info(show"Skipping entry because of tag filter: $tf").as(false)
+        }
+      }
 
       private def checkPicking(picking: Template.PickingTemplate,
                                today: LocalDate,

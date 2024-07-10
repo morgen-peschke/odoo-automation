@@ -12,9 +12,9 @@ import peschke.odoo.JsonLoader.Source.StdIn
 import peschke.odoo.models.Action.{Fields, Read, Search, Write}
 import peschke.odoo.models.RpcServiceCall.ObjectService.{FieldName, Id, ModelName}
 import peschke.odoo.models.Template.TimeOfDay.ScheduleAtOverrides
-import peschke.odoo.models.Template.{PickingNameTemplate, TimeOfDay}
+import peschke.odoo.models.Template.{PickingNameTemplate, Tag, TimeOfDay}
 import peschke.odoo.models.authentication.{ApiKey, Database, ServerUri, Username}
-import peschke.odoo.models.{Action, DateOverride, DayOfWeek, LabelFilter}
+import peschke.odoo.models.{Action, DateOverride, DayOfWeek, LabelFilter, TagFilter}
 import peschke.odoo.{AppConfig, JsonLoader}
 
 import java.nio.file.InvalidPathException
@@ -129,7 +129,7 @@ object ArgumentParser {
 
   implicit val dayOfWeekArgument: Argument[NonEmptyList[DayOfWeek]] = {
     val entryNames = DayOfWeek.values.map(t => t.fullName).mkString("unique prefix of \"","\", \"","\"")
-    csvOpt(entryNames, "dayOfWeek", DayOfWeek.parse(_).toValidatedNel)
+    csvOpt(entryNames, "dayOfWeek", Argument[DayOfWeek].read(_))
   }
 
   implicit val intList: Argument[NonEmptyList[Int]] =
@@ -264,6 +264,25 @@ object ArgumentParser {
       NonEmptyList.fromList(exact.concat(startsWith).concat(contains).concat(matches))
     }
 
+  private val tagFilterOpts: Opts[TagFilter] =
+    (
+      Opts
+        .options[Tag](
+          long = "with-tag",
+          help = "Only create pickings that include this tag"
+        )
+        .map(TagFilter.TaggedWith)
+        .withDefault(TagFilter.True),
+      Opts
+        .options[Tag](
+          long = "exclude-tag",
+          help = "Only create pickings that does not include this tags"
+        )
+        .map(TagFilter.TaggedWith)
+        .map(TagFilter.Not)
+        .withDefault(TagFilter.True)
+    ).mapN(TagFilter.And)
+
   private val createPickingOpts: Opts[AppCommand] =
     Opts.subcommand("pickings", help = "Create pickings and moves from a template") {
       (
@@ -278,7 +297,8 @@ object ArgumentParser {
           Opts.option[TimeOfDay.MorningTime]("am-time", help = "Time of day to schedule AM pickings").orNone,
           Opts.option[TimeOfDay.NightTime]("pm-time", help = "Time of day to schedule PM pickings").orNone
         ).tupled.map(ScheduleAtOverrides(_)),
-        labelFilterOpts
+        labelFilterOpts,
+        tagFilterOpts
       ).mapN(AppCommand.CreatePickings.apply)
     }
 

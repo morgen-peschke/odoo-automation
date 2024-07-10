@@ -92,6 +92,7 @@ object TemplateDecoder {
       accumulatingDecoder { c =>
         (
           c.downField("label").asAcc[EntryLabel],
+          c.downField("tags").asAcc[List[Tag]],
           c.downField("pickings").asAcc[NonEmptyList[PickingTemplate]]
         ).mapN(Entry)
       }

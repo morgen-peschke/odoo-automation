@@ -91,7 +91,8 @@ object PickingCreator {
             createPickings.times,
             createPickings.dateOverridesOpt,
             createPickings.scheduleAtOverrides,
-            createPickings.labelFilters
+            createPickings.labelFilters,
+            createPickings.tagFilter
           ))
           .flatMap {
             case None => logger.info("Nothing to create")
@@ -113,7 +114,6 @@ object PickingCreator {
     val LocationId: FieldName = FieldName("location_id")
     val LocationDestId: FieldName = FieldName("location_dest_id")
     val ScheduledDate: FieldName = FieldName("scheduled_date")
-    val ImmediateTransfer: FieldName = FieldName("immediate_transfer")
   }
 
   private object Move {

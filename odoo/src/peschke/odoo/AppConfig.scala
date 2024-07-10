@@ -9,7 +9,7 @@ import peschke.odoo.AppConfig.{AppCommand, AuthConfig, DryRun, LoginCache, Verbo
 import peschke.odoo.models.Template.TimeOfDay.ScheduleAtOverrides
 import peschke.odoo.models.Template.{PickingNameTemplate, TimeOfDay}
 import peschke.odoo.models.authentication.{ApiKey, Database, ServerUri, Username}
-import peschke.odoo.models.{Action, DateOverride, LabelFilter, NewBoolean}
+import peschke.odoo.models.{Action, DateOverride, LabelFilter, NewBoolean, TagFilter}
 import peschke.odoo.utils.Circe._
 
 import scala.concurrent.duration.{Duration, DurationInt, FiniteDuration}
@@ -71,7 +71,8 @@ object AppConfig {
                                     times: Option[NonEmptySet[TimeOfDay]],
                                     dateOverridesOpt: Option[NonEmptySet[DateOverride]],
                                     scheduleAtOverrides: ScheduleAtOverrides,
-                                    labelFilters: Option[NonEmptyList[LabelFilter]]
+                                    labelFilters: Option[NonEmptyList[LabelFilter]],
+                                    tagFilter: TagFilter
                                    ) extends AppCommand
     object CreatePickings {
       implicit val decoder: Decoder[CreatePickings] = accumulatingDecoder { c =>
@@ -84,7 +85,8 @@ object AppConfig {
             c.downField("am-time").asAcc[Option[TimeOfDay.MorningTime]],
             c.downField("pm-time").asAcc[Option[TimeOfDay.NightTime]]
           ).tupled.map(ScheduleAtOverrides(_)),
-          none[NonEmptyList[LabelFilter]].valid
+          none[NonEmptyList[LabelFilter]].valid,
+          TagFilter.True.valid
         ).mapN(CreatePickings.apply)
       }
     }

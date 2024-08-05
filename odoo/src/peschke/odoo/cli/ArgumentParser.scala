@@ -222,41 +222,41 @@ object ArgumentParser {
     (
       Opts
         .options[String](
-        "label-is",
+        "label:is",
         help =
           """Only create pickings that exactly match this label
             |
-            |When multiple --label-* options given, labels that match any filter are included""".stripMargin
+            |When multiple --label:* options given, labels that match any filter are included""".stripMargin
         )
         .map(_.map(LabelFilter.Exact))
         .orEmpty,
       Opts
         .options[String](
-          "label-starts-with",
+          "label:starts-with",
           help =
             """Only create pickings that start with this substring
               |
-              |When multiple --label-* options given, labels that match any filter are included""".stripMargin
+              |When multiple --label:* options given, labels that match any filter are included""".stripMargin
         )
         .map(_.map(LabelFilter.StartsWith))
         .orEmpty,
       Opts
         .options[String](
-          "label-contains",
+          "label:contains",
           help =
             """Only create pickings that contain this substring
               |
-              |When multiple --label-* options given, labels that match any filter are included""".stripMargin
+              |When multiple --label:* options given, labels that match any filter are included""".stripMargin
         )
         .map(_.map(LabelFilter.Contains))
         .orEmpty,
       Opts
         .options[Regex](
-          "label-matches",
+          "label:matches",
           help =
             """Only create pickings that match this regex
               |
-              |When multiple --label-* options given, labels that match any filter are included""".stripMargin
+              |When multiple --label:* options given, labels that match any filter are included""".stripMargin
         )
         .map(_.map(LabelFilter.Matches))
         .orEmpty
@@ -268,14 +268,14 @@ object ArgumentParser {
     (
       Opts
         .options[Tag](
-          long = "with-tag",
+          long = "tag",
           help = "Only create pickings that include this tag"
         )
         .map(TagFilter.TaggedWith)
         .withDefault(TagFilter.True),
       Opts
         .options[Tag](
-          long = "exclude-tag",
+          long = "tag:not",
           help = "Only create pickings that does not include this tags"
         )
         .map(TagFilter.TaggedWith)

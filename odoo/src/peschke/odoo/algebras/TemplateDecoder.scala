@@ -3,16 +3,20 @@ package peschke.odoo.algebras
 import cats.Monad
 import cats.data.NonEmptyList
 import cats.syntax.all._
-import io.circe.{ACursor, Decoder, DecodingFailure}
+import io.circe.ACursor
+import io.circe.Decoder
+import io.circe.DecodingFailure
 import peschke.odoo.JsonLoader
+import peschke.odoo.models.Frequency
+import peschke.odoo.models.KnownIds
+import peschke.odoo.models.Template
 import peschke.odoo.models.Template._
-import peschke.odoo.models.{Frequency, KnownIds, Template}
 import peschke.odoo.utils.Circe._
 
-trait TemplateDecoder[F[_]]{
+trait TemplateDecoder[F[_]] {
   def decode(templateSource: JsonLoader.Source, knownMappingsOpt: Option[JsonLoader.Source]): F[Template]
 }
-object TemplateDecoder {
+object TemplateDecoder      {
   def apply[F[_]](implicit TD: TemplateDecoder[F]): TD.type = TD
 
   def default[F[_]: JsonLoader: Monad]: TemplateDecoder[F] = new TemplateDecoder[F] {
@@ -54,7 +58,10 @@ object TemplateDecoder {
       )
     }
 
-    private def mkPickingDecoder(knownIds: KnownIds)(implicit moveDecoder: Decoder[MoveTemplateSet]): Decoder[PickingTemplate] = {
+    private def mkPickingDecoder
+      (knownIds:             KnownIds)
+      (implicit moveDecoder: Decoder[MoveTemplateSet])
+      : Decoder[PickingTemplate] = {
       val pickingTypeIdDecoder = wrap[PickingTypeId](knownIds.pickingTypeIds.get)
       val locationIdDecoder = wrap[LocationId](knownIds.locations.get)
       val locationDestIdDecoder = wrap[LocationDestId](knownIds.locations.get(_).map { id =>

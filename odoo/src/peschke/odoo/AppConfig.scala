@@ -1,45 +1,55 @@
 package peschke.odoo
 
 import cats.Show
-import cats.data.{NonEmptyList, NonEmptySet}
+import cats.data.NonEmptyList
+import cats.data.NonEmptySet
 import cats.syntax.all._
 import com.monovore.decline.Argument
-import io.circe.{Decoder, Encoder}
-import peschke.odoo.AppConfig.{AppCommand, AuthConfig, DryRun, LoginCache, Verbose}
+import io.circe.Decoder
+import io.circe.Encoder
+import peschke.odoo.AppConfig.AppCommand
+import peschke.odoo.AppConfig.AuthConfig
+import peschke.odoo.AppConfig.DryRun
+import peschke.odoo.AppConfig.LoginCache
+import peschke.odoo.AppConfig.Verbose
+import peschke.odoo.models.Template.PickingNameTemplate
+import peschke.odoo.models.Template.TimeOfDay
 import peschke.odoo.models.Template.TimeOfDay.ScheduleAtOverrides
-import peschke.odoo.models.Template.{PickingNameTemplate, TimeOfDay}
-import peschke.odoo.models.authentication.{ApiKey, Database, ServerUri, Username}
-import peschke.odoo.models.{Action, DateOverride, LabelFilter, NewBoolean, TagFilter}
+import peschke.odoo.models._
+import peschke.odoo.models.authentication.ApiKey
+import peschke.odoo.models.authentication.Database
+import peschke.odoo.models.authentication.ServerUri
+import peschke.odoo.models.authentication.Username
 import peschke.odoo.utils.Circe._
 
-import scala.concurrent.duration.{Duration, DurationInt, FiniteDuration}
+import scala.concurrent.duration.Duration
+import scala.concurrent.duration.DurationInt
+import scala.concurrent.duration.FiniteDuration
 
-final case class AppConfig(auth: AuthConfig,
-                           command: AppCommand,
-                           dryRun: DryRun,
-                           verbose: Verbose,
-                           loginCache: LoginCache,
-                           globalNamePrefixOpt: Option[PickingNameTemplate],
-                           globalNameSuffixOpt: Option[PickingNameTemplate],
-                           minIntervalBetweenRequests: FiniteDuration
-                          )
+final case class AppConfig
+  (auth: AuthConfig,
+   command: AppCommand,
+   dryRun: DryRun,
+   verbose: Verbose,
+   loginCache: LoginCache,
+   globalNamePrefixOpt: Option[PickingNameTemplate],
+   globalNameSuffixOpt: Option[PickingNameTemplate],
+   minIntervalBetweenRequests: FiniteDuration
+  )
 object AppConfig {
-  final case class AuthConfig(serverUrl: ServerUri,
-                              username: Username,
-                              database: Database,
-                              apiKey: ApiKey)
+  final case class AuthConfig(serverUrl: ServerUri, username: Username, database: Database, apiKey: ApiKey)
 
   sealed abstract class DryRun(val name: String)
   object DryRun {
-    case object Enabled extends DryRun("TRUE")
+    case object Enabled  extends DryRun("TRUE")
     case object Disabled extends DryRun("FALSE")
     case object ReadOnly extends DryRun("READ-ONLY")
 
     def fromString(raw: String): Either[String, DryRun] = raw.toUpperCase match {
-      case "T" | Enabled.name => Enabled.asRight
-      case "F" | Disabled.name => Disabled.asRight
+      case "T" | Enabled.name   => Enabled.asRight
+      case "F" | Disabled.name  => Disabled.asRight
       case "RO" | ReadOnly.name => ReadOnly.asRight
-      case _ => "Expected one of: 'true', 't', 'false', 'f', 'ro', or 'read-only'".asLeft
+      case _                    => "Expected one of: 'true', 't', 'false', 'f', 'ro', or 'read-only'".asLeft
     }
 
     implicit val show: Show[DryRun] = Show.show(_.name)
@@ -66,14 +76,15 @@ object AppConfig {
   object AppCommand {
     final case class DoAction(action: Action) extends AppCommand
 
-    final case class CreatePickings(template: JsonLoader.Source,
-                                    knownIdsOpt: Option[JsonLoader.Source],
-                                    times: Option[NonEmptySet[TimeOfDay]],
-                                    dateOverridesOpt: Option[NonEmptySet[DateOverride]],
-                                    scheduleAtOverrides: ScheduleAtOverrides,
-                                    labelFilters: Option[NonEmptyList[LabelFilter]],
-                                    tagFilter: TagFilter
-                                   ) extends AppCommand
+    final case class CreatePickings
+      (template: JsonLoader.Source,
+       knownIdsOpt: Option[JsonLoader.Source],
+       times: Option[NonEmptySet[TimeOfDay]],
+       dateOverridesOpt: Option[NonEmptySet[DateOverride]],
+       scheduleAtOverrides: ScheduleAtOverrides,
+       labelFilter: LabelFilter,
+       tagFilter: TagFilter
+      ) extends AppCommand
     object CreatePickings {
       implicit val decoder: Decoder[CreatePickings] = accumulatingDecoder { c =>
         (
@@ -85,8 +96,8 @@ object AppConfig {
             c.downField("am-time").asAcc[Option[TimeOfDay.MorningTime]],
             c.downField("pm-time").asAcc[Option[TimeOfDay.NightTime]]
           ).tupled.map(ScheduleAtOverrides(_)),
-          none[NonEmptyList[LabelFilter]].valid,
-          TagFilter.True.valid
+          LabelFilter(TextFilter.truthy).valid,
+          TagFilter.Exists(TextFilter.truthy).valid
         ).mapN(CreatePickings.apply)
       }
     }
@@ -110,11 +121,12 @@ object AppConfig {
   }
 
   implicit val finiteDurationDecoder: Decoder[FiniteDuration] = Decoder[String].emap { raw =>
-    Either.catchOnly[NumberFormatException](Duration(raw))
+    Either
+      .catchOnly[NumberFormatException](Duration(raw))
       .leftMap(_ => s"Invalid duration: $raw")
       .flatMap {
         case duration: FiniteDuration => duration.asRight
-        case _ => "Expected finite duration".asLeft
+        case _                        => "Expected finite duration".asLeft
       }
   }
 

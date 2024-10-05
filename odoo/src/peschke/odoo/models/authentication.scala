@@ -2,7 +2,8 @@ package peschke.odoo.models
 
 import cats.syntax.all._
 import com.monovore.decline.Argument
-import io.circe.{Decoder, Json}
+import io.circe.Decoder
+import io.circe.Json
 import io.circe.syntax._
 import org.http4s.Uri
 

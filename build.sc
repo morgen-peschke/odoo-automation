@@ -21,7 +21,6 @@ trait StyleModule extends ScalafmtModule with ScalafixModule {
     )
 
   override def scalafixIvyDeps = super.scalafixIvyDeps() ++ Agg(
-    ivy"com.github.liancheng::organize-imports:0.6.0",
     ivy"org.typelevel::typelevel-scalafix:0.1.5"
   )
 
@@ -51,7 +50,8 @@ object odoo extends ScalaModule with StyleModule with PublishModule {
     ivy"org.typelevel::log4cats-slf4j:2.5.0",
     ivy"org.slf4j:slf4j-simple:2.0.13",
     ivy"com.github.spullara.mustache.java:compiler:0.9.10",
-    ivy"org.systemfw::upperbound:0.5.0"
+    ivy"org.systemfw::upperbound:0.5.0",
+    ivy"org.typelevel::cats-parse:0.3.9"
   )
 
   override def runIvyDeps = Agg(ivy"ch.qos.logback:logback-classic:1.2.10")

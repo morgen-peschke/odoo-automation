@@ -7,7 +7,7 @@ import peschke.odoo.utils.Circe._
 
 sealed trait Frequency
 object Frequency {
-  case object Daily extends Frequency
+  case object Daily                                     extends Frequency
   final case class Weekly(days: NonEmptySet[DayOfWeek]) extends Frequency
 
   implicit val decoder: Decoder[Frequency] = anyOf[Frequency](

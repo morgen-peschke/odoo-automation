@@ -1,16 +1,23 @@
 package peschke.odoo.models
 
 import cats.syntax.all._
-import io.circe.{Decoder, Encoder, Json}
+import io.circe.Decoder
+import io.circe.Encoder
+import io.circe.Json
 import io.circe.syntax._
 import peschke.odoo.models.RpcServiceCall.ObjectService.ModelName
-import peschke.odoo.models.Template.{LocationId, PartnerId, PickingTypeId, ProductId}
+import peschke.odoo.models.Template.LocationId
+import peschke.odoo.models.Template.PartnerId
+import peschke.odoo.models.Template.PickingTypeId
+import peschke.odoo.models.Template.ProductId
 import peschke.odoo.utils.Circe._
 
-final case class KnownIds(locations: Map[String, LocationId],
-                          products: Map[String, ProductId],
-                          pickingTypeIds: Map[String, PickingTypeId],
-                          partners: Map[String, PartnerId])
+final case class KnownIds
+  (locations: Map[String, LocationId],
+   products: Map[String, ProductId],
+   pickingTypeIds: Map[String, PickingTypeId],
+   partners: Map[String, PartnerId]
+  )
 object KnownIds {
   def empty: KnownIds = KnownIds(Map.empty, Map.empty, Map.empty, Map.empty)
 
@@ -29,10 +36,10 @@ object KnownIds {
   }
   implicit val encoder: Encoder[KnownIds] = Encoder.instance { ki =>
     Json.obj(
-      ModelName.raw(locations) := ki.locations,
-      ModelName.raw(products) := ki.products,
+      ModelName.raw(locations)      := ki.locations,
+      ModelName.raw(products)       := ki.products,
       ModelName.raw(pickingTypeIds) := ki.pickingTypeIds,
-      ModelName.raw(partners) := ki.partners
+      ModelName.raw(partners)       := ki.partners
     )
   }
 }

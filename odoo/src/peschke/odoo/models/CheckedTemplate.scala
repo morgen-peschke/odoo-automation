@@ -11,18 +11,18 @@ object CheckedTemplate {
   object PickingName extends NonEmptyString("Picking name")
   type PickingName = PickingName.Type
 
-  final case class PickingTemplate(name: PickingName,
-                                   frequency: Frequency,
-                                   scheduledDate: ScheduledDate,
-                                   moveType: MoveType,
-                                   pickingTypeId: PickingTypeId,
-                                   locationId: LocationId,
-                                   locationDestId: LocationDestId,
-                                   partnerId: PartnerId,
-                                   moves: NonEmptyList[MoveTemplate])
+  final case class PickingTemplate
+    (name: PickingName,
+     frequency: Frequency,
+     scheduledDate: ScheduledDate,
+     moveType: MoveType,
+     pickingTypeId: PickingTypeId,
+     locationId: LocationId,
+     locationDestId: LocationDestId,
+     partnerId: PartnerId,
+     moves: NonEmptyList[MoveTemplate]
+    )
 
-  final case class MoveTemplate(name: MoveName,
-                                productId: ProductId,
-                                quantity: ProductQuantity)
+  final case class MoveTemplate(name: MoveName, productId: ProductId, quantity: ProductQuantity)
 
 }

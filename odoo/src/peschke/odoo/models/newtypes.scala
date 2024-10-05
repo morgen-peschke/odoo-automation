@@ -1,12 +1,17 @@
 package peschke.odoo.models
 
-import cats.{Order, Show}
+import cats.Order
+import cats.Show
 import cats.syntax.all._
 import com.monovore.decline.Argument
-import io.circe.{Decoder, Encoder, KeyDecoder, KeyEncoder}
+import io.circe.Decoder
+import io.circe.Encoder
+import io.circe.KeyDecoder
+import io.circe.KeyEncoder
 
 import java.time.LocalTime
-import java.time.format.{DateTimeFormatter, DateTimeParseException}
+import java.time.format.DateTimeFormatter
+import java.time.format.DateTimeParseException
 
 trait NewBoolean extends supertagged.NewType[Boolean] {
   val Enabled: Type = apply(true)
@@ -18,9 +23,9 @@ trait NewBoolean extends supertagged.NewType[Boolean] {
   implicit val encoder: Encoder[Type] = Encoder[Boolean].contramap(raw)
 
   implicit val argument: Argument[Type] = Argument.from("boolean")(_.toUpperCase match {
-    case "T" | "TRUE" => Enabled.valid
+    case "T" | "TRUE"  => Enabled.valid
     case "F" | "FALSE" => Disabled.valid
-    case _ => "Expected one of: 'true', 't', 'false', 'f'".invalidNel
+    case _             => "Expected one of: 'true', 't', 'false', 'f'".invalidNel
   })
 }
 

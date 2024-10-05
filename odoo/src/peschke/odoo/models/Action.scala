@@ -1,11 +1,16 @@
 package peschke.odoo.models
 
-import cats.data.{NonEmptyList, NonEmptyMap}
+import cats.data.NonEmptyList
+import cats.data.NonEmptyMap
 import cats.syntax.all._
 import com.monovore.decline.Argument
-import io.circe.{Decoder, Encoder, Json}
+import io.circe.Decoder
+import io.circe.Encoder
+import io.circe.Json
 import io.circe.syntax._
-import peschke.odoo.models.RpcServiceCall.ObjectService.{FieldName, Id, ModelName}
+import peschke.odoo.models.RpcServiceCall.ObjectService.FieldName
+import peschke.odoo.models.RpcServiceCall.ObjectService.Id
+import peschke.odoo.models.RpcServiceCall.ObjectService.ModelName
 import peschke.odoo.utils.Circe._
 
 sealed trait Action
@@ -15,16 +20,22 @@ object Action {
   case object Login extends Action
 
   final case class Fields(model: ModelName, attributes: Either[List[Fields.Attribute], Fields.DefaultAttributes])
-    extends Action
+      extends Action
   object Fields {
     object Attribute extends NonEmptyString("Attribute")
     type Attribute = Attribute.Type
 
     object DefaultAttributes {
       val attributes: List[Attribute] = List(
-        "string", "help",
-        "required", "manual",
-        "type", "selection", "relation", "relation_field", "digits",
+        "string",
+        "help",
+        "required",
+        "manual",
+        "type",
+        "selection",
+        "relation",
+        "relation_field",
+        "digits",
         "searchable"
       ).map(Attribute(_))
     }
@@ -47,7 +58,7 @@ object Action {
     implicit val attributeListArgument: Argument[Either[List[Attribute], DefaultAttributes]] =
       Argument.from("default|attr0,attr1,...,attrN") {
         case "default" => DefaultAttributes.asRight.valid
-        case csv => attributesArgument.read(csv).map(_.asLeft)
+        case csv       => attributesArgument.read(csv).map(_.asLeft)
       }
 
     implicit val decoder: Decoder[Fields] = accumulatingDecoder { c =>
@@ -58,10 +69,9 @@ object Action {
     }
   }
 
-  final case class Search(model: ModelName,
-                    fields: List[FieldName],
-                    conditions: List[Search.Condition],
-                    limitOpt: Option[Search.Limit]) extends Action
+  final case class Search
+    (model: ModelName, fields: List[FieldName], conditions: List[Search.Condition], limitOpt: Option[Search.Limit])
+      extends Action
   object Search {
     object Condition extends supertagged.NewType[List[Json]] {
       implicit val decoder: Decoder[Type] = Decoder[List[Json]].map(apply(_))
@@ -98,9 +108,7 @@ object Action {
     }
   }
 
-  final case class Read(model: ModelName,
-                  ids: NonEmptyList[Id],
-                  fields: List[FieldName]) extends Action
+  final case class Read(model: ModelName, ids: NonEmptyList[Id], fields: List[FieldName]) extends Action
   object Read {
     implicit val decoder: Decoder[Read] = accumulatingDecoder { c =>
       (
@@ -121,9 +129,8 @@ object Action {
     }
   }
 
-  final case class Write(model: ModelName,
-                         ids: NonEmptyList[Id],
-                         updates: NonEmptyList[(FieldName, Json)]) extends Action
+  final case class Write(model: ModelName, ids: NonEmptyList[Id], updates: NonEmptyList[(FieldName, Json)])
+      extends Action
   object Write {
     implicit val decoder: Decoder[Write] = accumulatingDecoder { c =>
       (

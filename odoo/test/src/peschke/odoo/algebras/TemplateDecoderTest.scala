@@ -6,22 +6,23 @@ import peschke.odoo.utils.Circe._
 
 class TemplateDecoderTest extends munit.FunSuite {
   test("Loading from parent") {
-    val json = io.circe.parser.parse {
-      """{ "value": "parent",
-        |  "values": [
-        |    {},
-        |    { "value": "child" }
-        |  ]
-        |}""".stripMargin
-    }.valueOr(fail("Invalid Json", _))
+    val json = io
+      .circe.parser.parse {
+        """{ "value": "parent",
+          |  "values": [
+          |    {},
+          |    { "value": "child" }
+          |  ]
+          |}""".stripMargin
+      }.valueOr(fail("Invalid Json", _))
 
-    case class Value(value: String)
-    case class Test(values: List[Value])
+    final case class Value(value: String)
+    final case class Test(values: List[Value])
 
     implicit val valueDecoder: Decoder[Value] = accumulatingDecoder { c =>
       c.downField("value").asAcc[String].orElse {
-        c.up.up.downField("value").asAcc[String]
-      }.map(Value)
+          c.up.up.downField("value").asAcc[String]
+        }.map(Value)
     }
     implicit val testDecoder: Decoder[Test] = accumulatingDecoder { c =>
       c.downField("values").asAcc[List[Value]].map(Test)

@@ -4,16 +4,21 @@ import cats.data.NonEmptyList
 import io.circe.Json
 import io.circe.syntax._
 import peschke.odoo.models.Action.Fields.Attribute
-import peschke.odoo.models.Action.Search.{Condition, Limit}
-import peschke.odoo.models.RpcServiceCall.{MethodName, ServiceName}
-import peschke.odoo.models.authentication.{ApiKey, Database, LoggedIn, Username}
+import peschke.odoo.models.Action.Search.Condition
+import peschke.odoo.models.Action.Search.Limit
+import peschke.odoo.models.RpcServiceCall.MethodName
+import peschke.odoo.models.RpcServiceCall.ServiceName
+import peschke.odoo.models.authentication.ApiKey
+import peschke.odoo.models.authentication.Database
+import peschke.odoo.models.authentication.LoggedIn
+import peschke.odoo.models.authentication.Username
 
 sealed trait RpcServiceCall {
   def serviceName: ServiceName
   def methodName: MethodName
   def args: List[Json]
 }
-object RpcServiceCall {
+object RpcServiceCall       {
   object ServiceName extends NonEmptyString("Service name")
 
   type ServiceName = ServiceName.Type
@@ -36,7 +41,8 @@ object RpcServiceCall {
     }
 
     final case class Login(database: Database, username: Username, apiKey: ApiKey)
-      extends RpcServiceCall with CommonService {
+        extends RpcServiceCall
+        with CommonService {
       override def methodName: MethodName = Login.Name
 
       override def args: List[Json] =
@@ -76,21 +82,24 @@ object RpcServiceCall {
     type ModelName = ModelName.Type
 
     final case class FieldsGet(loggedIn: LoggedIn, modelName: ModelName, attributes: List[Attribute])
-      extends RpcServiceCall with ObjectService {
+        extends RpcServiceCall
+        with ObjectService {
       override def extraArgs: List[Json] = List(
         modelName.asJson,
         "fields_get".asJson,
         Json.arr(),
-        Json.obj("attributes" := attributes),
+        Json.obj("attributes" := attributes)
       )
     }
 
-    final case class SearchRead(loggedIn: LoggedIn,
-                                modelName: ModelName,
-                                conditions: List[Condition],
-                                fields: List[FieldName],
-                                limitOpt: Option[Limit]
-                               ) extends RpcServiceCall with ObjectService {
+    final case class SearchRead
+      (loggedIn: LoggedIn,
+       modelName: ModelName,
+       conditions: List[Condition],
+       fields: List[FieldName],
+       limitOpt: Option[Limit]
+      ) extends RpcServiceCall
+        with ObjectService {
       override def extraArgs: List[Json] = List(
         modelName.asJson,
         "search_read".asJson,
@@ -103,11 +112,9 @@ object RpcServiceCall {
       )
     }
 
-    final case class Read(loggedIn: LoggedIn,
-                          modelName: ModelName,
-                          ids: NonEmptyList[Id],
-                          fields: List[FieldName]
-                         ) extends RpcServiceCall with ObjectService {
+    final case class Read(loggedIn: LoggedIn, modelName: ModelName, ids: NonEmptyList[Id], fields: List[FieldName])
+        extends RpcServiceCall
+        with ObjectService {
       override def extraArgs: List[Json] = List(
         modelName.asJson,
         "read".asJson,
@@ -116,25 +123,23 @@ object RpcServiceCall {
       )
     }
 
-    final case class Write(loggedIn: LoggedIn,
-                           modelName: ModelName,
-                           ids: NonEmptyList[Id],
-                           updates: NonEmptyList[(FieldName, Json)]
-                         ) extends RpcServiceCall with ObjectService {
+    final case class Write
+      (loggedIn: LoggedIn, modelName: ModelName, ids: NonEmptyList[Id], updates: NonEmptyList[(FieldName, Json)])
+        extends RpcServiceCall
+        with ObjectService {
       override def extraArgs: List[Json] = List(
         modelName.asJson,
         "write".asJson,
         Json.arr(ids.asJson),
-        Json.fromFields(updates.map {
-          case (k, v) => FieldName.raw(k) -> v
+        Json.fromFields(updates.map { case (k, v) =>
+          FieldName.raw(k) -> v
         }.toList)
       )
     }
 
-    final case class Create(loggedIn: LoggedIn,
-                            modelName: ModelName,
-                            parameters: NonEmptyList[(FieldName, Json)]
-                           ) extends RpcServiceCall with ObjectService {
+    final case class Create(loggedIn: LoggedIn, modelName: ModelName, parameters: NonEmptyList[(FieldName, Json)])
+        extends RpcServiceCall
+        with ObjectService {
       override def extraArgs: List[Json] = List(
         modelName.asJson,
         "create".asJson,

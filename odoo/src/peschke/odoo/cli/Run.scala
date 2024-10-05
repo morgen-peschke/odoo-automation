@@ -1,18 +1,35 @@
 package peschke.odoo.cli
 
-import peschke.odoo.{AppConfig, JsonLoader}
+import cats.effect.ExitCode
+import cats.effect.IO
+import cats.effect.IOApp
+import cats.effect.std.Console
+import cats.effect.std.Random
 import cats.syntax.all._
-import cats.effect.{ExitCode, IO, IOApp}
-import cats.effect.std.{Console, Random}
 import com.monovore.decline.Help
 import io.circe.Json
 import io.circe.syntax._
 import org.http4s.ember.client.EmberClientBuilder
 import org.typelevel.log4cats.LoggerFactory
 import org.typelevel.log4cats.slf4j.Slf4jFactory
-import peschke.odoo.AppConfig.{DryRun, Verbose}
-import peschke.odoo.algebras.{CommandRunner, DateOverrideResolver, Generator, JsonRpc, KnownIdsBuilder, LoginManager, PickingCreator, PickingNameGenerator, RequestBuilder, ServiceCallBuilder, TemplateChecker, TemplateDecoder}
-import peschke.odoo.models.RpcServiceCall.{CommonService, ObjectService}
+import peschke.odoo.AppConfig
+import peschke.odoo.AppConfig.DryRun
+import peschke.odoo.AppConfig.Verbose
+import peschke.odoo.JsonLoader
+import peschke.odoo.algebras.CommandRunner
+import peschke.odoo.algebras.DateOverrideResolver
+import peschke.odoo.algebras.Generator
+import peschke.odoo.algebras.JsonRpc
+import peschke.odoo.algebras.KnownIdsBuilder
+import peschke.odoo.algebras.LoginManager
+import peschke.odoo.algebras.PickingCreator
+import peschke.odoo.algebras.PickingNameGenerator
+import peschke.odoo.algebras.RequestBuilder
+import peschke.odoo.algebras.ServiceCallBuilder
+import peschke.odoo.algebras.TemplateChecker
+import peschke.odoo.algebras.TemplateDecoder
+import peschke.odoo.models.RpcServiceCall.CommonService
+import peschke.odoo.models.RpcServiceCall.ObjectService
 import upperbound.Limiter
 
 import java.time.ZoneId
@@ -48,23 +65,22 @@ object Run extends IOApp {
             def dryRunRpc = {
               val idGen = Generator.usingRandom[IO, Json](_.nextIntBounded(10000).map(_.asJson))
               JsonRpc.dryRun[IO] {
-                case CommonService.Version |
-                     ObjectService.FieldsGet(_, _, _) |
-                     ObjectService.SearchRead(_, _, _, _, _) |
-                     ObjectService.Read(_, _, _, _) |
-                     ObjectService.Write(_, _, _, _) => Json.obj().pure[IO]
+                case CommonService.Version | ObjectService.FieldsGet(_, _, _) |
+                    ObjectService.SearchRead(_, _, _, _, _) | ObjectService.Read(_, _, _, _) |
+                    ObjectService.Write(_, _, _, _) =>
+                  Json.obj().pure[IO]
                 case CommonService.Login(_, _, _) | ObjectService.Create(_, _, _) => idGen.create
               }
             }
 
             val runner = config.dryRun match {
-              case DryRun.Enabled => dryRunRpc
+              case DryRun.Enabled  => dryRunRpc
               case DryRun.Disabled => liveRpc
               case DryRun.ReadOnly => JsonRpc.readOnly(liveRpc, dryRunRpc)
             }
             config.verbose match {
               case Verbose.Enabled => JsonRpc.verbose(runner)
-              case _ => runner
+              case _               => runner
             }
           }
           implicit val pickingNameGenerator: PickingNameGenerator[IO] = PickingNameGenerator.default[IO](

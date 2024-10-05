@@ -1,32 +1,54 @@
 package peschke.odoo.cli
 
 import cats.Monad
-import cats.data.{NonEmptyList, NonEmptySet, Validated, ValidatedNel}
+import cats.data.NonEmptyList
+import cats.data.NonEmptySet
+import cats.data.Validated
+import cats.data.ValidatedNel
 import cats.syntax.all._
-import com.monovore.decline.{Argument, Command, Help, Opts}
+import com.monovore.decline.Argument
+import com.monovore.decline.Command
+import com.monovore.decline.Help
+import com.monovore.decline.Opts
 import fs2.io.file.Path
 import io.circe.Json
-import peschke.odoo.AppConfig.{AppCommand, AuthConfig, DryRun, LoginCache, Verbose}
+import peschke.odoo.AppConfig
+import peschke.odoo.AppConfig.AppCommand
+import peschke.odoo.AppConfig.AuthConfig
+import peschke.odoo.AppConfig.DryRun
+import peschke.odoo.AppConfig.LoginCache
+import peschke.odoo.AppConfig.Verbose
+import peschke.odoo.JsonLoader
 import peschke.odoo.JsonLoader.Source
 import peschke.odoo.JsonLoader.Source.StdIn
-import peschke.odoo.models.Action.{Fields, Read, Search, Write}
-import peschke.odoo.models.RpcServiceCall.ObjectService.{FieldName, Id, ModelName}
+import peschke.odoo.algebras.TextFilterParser
+import peschke.odoo.models.Action.Fields
+import peschke.odoo.models.Action.Read
+import peschke.odoo.models.Action.Search
+import peschke.odoo.models.Action.Write
+import peschke.odoo.models.RpcServiceCall.ObjectService.FieldName
+import peschke.odoo.models.RpcServiceCall.ObjectService.Id
+import peschke.odoo.models.RpcServiceCall.ObjectService.ModelName
+import peschke.odoo.models.Template.PickingNameTemplate
+import peschke.odoo.models.Template.TimeOfDay
 import peschke.odoo.models.Template.TimeOfDay.ScheduleAtOverrides
-import peschke.odoo.models.Template.{PickingNameTemplate, Tag, TimeOfDay}
-import peschke.odoo.models.authentication.{ApiKey, Database, ServerUri, Username}
-import peschke.odoo.models.{Action, DateOverride, DayOfWeek, LabelFilter, TagFilter}
-import peschke.odoo.{AppConfig, JsonLoader}
+import peschke.odoo.models._
+import peschke.odoo.models.authentication.ApiKey
+import peschke.odoo.models.authentication.Database
+import peschke.odoo.models.authentication.ServerUri
+import peschke.odoo.models.authentication.Username
 
 import java.nio.file.InvalidPathException
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
-import scala.concurrent.duration.{DurationInt, FiniteDuration}
+import scala.concurrent.duration.DurationInt
+import scala.concurrent.duration.FiniteDuration
 import scala.util.matching.Regex
 
 trait ArgumentParser[F[_]] {
-  def parse(args: Seq[String]): F[Either[Help,AppConfig]]
+  def parse(args: Seq[String]): F[Either[Help, AppConfig]]
 }
-object ArgumentParser {
+object ArgumentParser      {
 
   private implicit val regexArg: Argument[Regex] =
     Argument.from("regular-expression") { raw =>
@@ -35,17 +57,60 @@ object ArgumentParser {
 
   private implicit val settingsArg: Argument[Source] =
     Argument.from("json:config-json|file:path|-")(_.split(':').toList match {
-      case "-" :: Nil => StdIn.validNel
+      case "-" :: Nil     => StdIn.validNel
       case "json" :: rest => JsonLoader.Source.RawJson(rest.mkString(":")).validNel
       case "file" :: rest =>
         val path = rest.mkString(":")
-        Validated.catchOnly[InvalidPathException](Path(path))
+        Validated
+          .catchOnly[InvalidPathException](Path(path))
           .bimap(
             e => s"Invalid path <$path>: ${e.getMessage}".pure[NonEmptyList],
             JsonLoader.Source.JsonFile
           )
-      case _ => """Expected Json prefixed with "json:" or a path prefixed with "file:" or "-" for stdin""".invalidNel
+      case _              => """Expected Json prefixed with "json:" or a path prefixed with "file:" or "-" for stdin""".invalidNel
     })
+
+  private implicit val textFilterArg: Argument[TextFilter] = {
+    val parser = TextFilterParser.default[Either[String, *], String](_.show)
+    Argument.from("filter-exp") { raw =>
+      parser
+        .parse(raw)
+        .leftMap { error =>
+          s"""Expected filter expression
+             |Not a strictly valid grammar, but here's the gist:
+             |
+             |QUOTED      := '"' [^"]* '"'
+             |UNQUOTED    := [A-Za-z0-9_.-]+
+             |WS          := ' ' | '\\t'
+             |TEXT        := QUOTED | UNQUOTED
+             |
+             |FALSE       := 'false'
+             |TRUE        := 'true'
+             |EXACT       := 'is:' TEXT
+             |PREFIX      := 'starts:' TEXT
+             |SUFFIX      := 'ends:' TEXT
+             |CONTAINS    := 'contains:' TEXT
+             |
+             |NOT_ALPHA   := 'not:' FILTER
+             |NOT_SYMBOL  := '!' FILTER
+             |NOT         := NOT_ALPHA | NOT_SYMBOL
+             |
+             |AND_ALPHA   := FILTER 'and' FILTER
+             |AND_SYMBOL  := FILTER '&' FILTER
+             |AND         := AND_ALPHA | AND_SYMBOL
+             |
+             |OR_ALPHA    := FILTER 'or' FILTER
+             |OR_SYMBOL   := FILTER '|' FILTER
+             |OR          := OR_ALPHA | OR_SYMBOL
+             |
+             |NO_PARENS   := FALSE | TRUE | EXACT | PREFIX | SUFFIX | CONTAINS | NOT | AND | OR
+             |WITH_PARENS := '(' NO_PARENS ')'
+             |FILTER      := WITH_PARENS | NO_PARENS
+             |$error""".stripMargin
+        }
+        .toValidatedNel
+    }
+  }
 
   private val appConfigJsonOpt: Opts[JsonLoader.Source] =
     Opts.option[JsonLoader.Source](
@@ -90,15 +155,17 @@ object ArgumentParser {
       (
         modelNameOpts,
         fieldNamesOpt,
-        Opts.options[Search.Condition](
-          short = "c",
-          long = "condition",
-          help = "Search condition, as a json-encoded array of strings"
-        ).orEmpty,
-        Opts.option[Search.Limit](
-          long = "limit",
-          help = "Limit the number of values returned"
-        ).orNone
+        Opts
+          .options[Search.Condition](
+            short = "c",
+            long = "condition",
+            help = "Search condition, as a json-encoded array of strings"
+          ).orEmpty,
+        Opts
+          .option[Search.Limit](
+            long = "limit",
+            help = "Limit the number of values returned"
+          ).orNone
       ).mapN(Search.apply)
     }
 
@@ -109,11 +176,13 @@ object ArgumentParser {
           FieldName.fromString(key).toValidatedNel,
           io.circe.parser.parse((v0 :: vN).mkString("=")).leftMap(_.message).toValidatedNel
         ).tupled
-      case _ => "Expected <field>=<json>".invalidNel
+      case _               => "Expected <field>=<json>".invalidNel
     }
   }
 
-  private def csvOpt[A](entryFormat: String, metaVar: String, parser: String => ValidatedNel[String, A]): Argument[NonEmptyList[A]] =
+  private def csvOpt[A]
+    (entryFormat: String, metaVar: String, parser: String => ValidatedNel[String, A])
+    : Argument[NonEmptyList[A]] =
     Argument.from(s"${metaVar}0,${metaVar}1,...${metaVar}N $metaVar:$entryFormat") { raw =>
       NonEmptyList
         .fromList(raw.split(',').toList)
@@ -128,7 +197,7 @@ object ArgumentParser {
   }
 
   implicit val dayOfWeekArgument: Argument[NonEmptyList[DayOfWeek]] = {
-    val entryNames = DayOfWeek.values.map(t => t.fullName).mkString("unique prefix of \"","\", \"","\"")
+    val entryNames = DayOfWeek.values.map(t => t.fullName).mkString("unique prefix of \"", "\", \"", "\"")
     csvOpt(entryNames, "dayOfWeek", Argument[DayOfWeek].read(_))
   }
 
@@ -155,7 +224,6 @@ object ArgumentParser {
       ).mapN(Read.apply)
     }
 
-
   private val writeOpts: Opts[Action] =
     Opts.subcommand("write", help = "Update a record") {
       (
@@ -173,7 +241,6 @@ object ArgumentParser {
       ).mapN(Write.apply)
     }
 
-
   private val createOpts: Opts[Action] =
     Opts.subcommand("create", help = "Create a record") {
       (
@@ -188,15 +255,18 @@ object ArgumentParser {
 
   private val dateOverridesOpt: Opts[Option[NonEmptySet[DateOverride]]] = {
     val today: Opts[NonEmptyList[DateOverride]] =
-      Opts.flag("today", help = "Create pickets for today (default)")
+      Opts
+        .flag("today", help = "Create pickets for today (default)")
         .as(DateOverride.Today.pure[NonEmptyList])
 
     val yesterday: Opts[NonEmptyList[DateOverride]] =
-      Opts.flag("yesterday", help = "Create pickings for yesterday")
+      Opts
+        .flag("yesterday", help = "Create pickings for yesterday")
         .as(DateOverride.DaysAgo(1).pure[NonEmptyList])
 
     val daysAgo: Opts[NonEmptyList[DateOverride]] =
-      Opts.options[NonEmptyList[Int]]("days-ago", help = "Create pickings for a date N days ago")
+      Opts
+        .options[NonEmptyList[Int]]("days-ago", help = "Create pickings for a date N days ago")
         .map(_.flatten.map(DateOverride.DaysAgo))
 
     val last: Opts[NonEmptyList[DateOverride]] =
@@ -218,80 +288,78 @@ object ArgumentParser {
     ).mapN(_ :: _ :: _ :: _ :: _ :: Nil).map(_.flatten).map(NonEmptyList.fromList).map(_.map(_.flatten.toNes))
   }
 
-  private val labelFilterOpts: Opts[Option[NonEmptyList[LabelFilter]]] =
-    (
+  private val labelFilterOpts: Opts[LabelFilter] = {
+    val parseAbleFilter =
       Opts
-        .options[String](
-        "label:is",
-        help =
-          """Only create pickings that exactly match this label
-            |
-            |When multiple --label:* options given, labels that match any filter are included""".stripMargin
+        .option[TextFilter](
+          long = "label",
+          help = "Only create pickings that match this filter"
         )
-        .map(_.map(LabelFilter.Exact))
-        .orEmpty,
-      Opts
-        .options[String](
-          "label:starts-with",
-          help =
-            """Only create pickings that start with this substring
-              |
-              |When multiple --label:* options given, labels that match any filter are included""".stripMargin
-        )
-        .map(_.map(LabelFilter.StartsWith))
-        .orEmpty,
-      Opts
-        .options[String](
-          "label:contains",
-          help =
-            """Only create pickings that contain this substring
-              |
-              |When multiple --label:* options given, labels that match any filter are included""".stripMargin
-        )
-        .map(_.map(LabelFilter.Contains))
-        .orEmpty,
-      Opts
-        .options[Regex](
-          "label:matches",
-          help =
-            """Only create pickings that match this regex
-              |
-              |When multiple --label:* options given, labels that match any filter are included""".stripMargin
-        )
-        .map(_.map(LabelFilter.Matches))
-        .orEmpty
-    ).mapN { (exact, startsWith, contains, matches) =>
-      NonEmptyList.fromList(exact.concat(startsWith).concat(contains).concat(matches))
-    }
 
-  private val tagFilterOpts: Opts[TagFilter] =
-    (
+    val regexFilter =
       Opts
-        .options[Tag](
-          long = "tag",
-          help = "Only create pickings that include this tag"
+        .option[Regex](
+          long = "label:regex",
+          help = "Only create pickings that match this filter (for when --label is insufficient)"
         )
-        .map(TagFilter.TaggedWith)
-        .withDefault(TagFilter.True),
+        .map(TextFilter.matches)
+
+    parseAbleFilter
+      .orElse(regexFilter)
+      .map(LabelFilter)
+      .withDefault(LabelFilter(TextFilter.truthy))
+  }
+
+  private val tagFilterOpts: Opts[TagFilter] = {
+    val exists =
       Opts
-        .options[Tag](
-          long = "tag:not",
-          help = "Only create pickings that does not include this tags"
+        .option[TextFilter](
+          long = "tag:exists",
+          help = "Only create pickings when at least one tag that matches this filter"
         )
-        .map(TagFilter.TaggedWith)
-        .map(TagFilter.Not)
-        .withDefault(TagFilter.True)
-    ).mapN(TagFilter.And)
+        .map(TagFilter.Exists)
+
+    val existsRegex =
+      Opts
+        .option[Regex](
+          long = "tag:exists:regex",
+          help = "Only create pickings when at least one tag that matches this regex"
+        )
+        .map(TextFilter.matches)
+        .map(TagFilter.Exists)
+
+    val forAll =
+      Opts
+        .option[TextFilter](
+          long = "tag:forAll",
+          help = "Only create pickings when all tags match this filter"
+        )
+        .map(TagFilter.ForAll)
+
+    val forAllRegex =
+      Opts
+        .option[Regex](
+          long = "tag:forAll:regex",
+          help = "Only create pickings when all tags match this regex"
+        )
+        .map(TextFilter.matches)
+        .map(TagFilter.ForAll)
+
+    val skip = TagFilter.Exists(TextFilter.truthy)
+
+    exists.orElse(forAll).orElse(existsRegex).orElse(forAllRegex).withDefault(skip)
+  }
 
   private val createPickingOpts: Opts[AppCommand] =
     Opts.subcommand("pickings", help = "Create pickings and moves from a template") {
       (
         Opts.option[Source]("template", help = "Template with pickings and moves"),
         Opts.option[Source]("known-ids", help = "File with mappings from strings to known ids").orNone,
-        Opts.option[NonEmptySet[TimeOfDay]](
-          "time-of-day",
-          help = "Only generate pickings for a specific time of day"
-        ).orNone,
+        Opts
+          .option[NonEmptySet[TimeOfDay]](
+            "time-of-day",
+            help = "Only generate pickings for a specific time of day"
+          ).orNone,
         dateOverridesOpt,
         (
           Opts.option[TimeOfDay.MorningTime]("am-time", help = "Time of day to schedule AM pickings").orNone,
@@ -351,7 +419,8 @@ object ArgumentParser {
     Command(name = "odoo", header = "Automation for odoo")(appConfigOpt)
 
   def default[F[_]: Monad](configLoader: JsonLoader[F]): ArgumentParser[F] =
-    command.parse(_, sys.env)
+    command
+      .parse(_, sys.env)
       .fold(
         _.asLeft[AppConfig].pure[F],
         _.fold(

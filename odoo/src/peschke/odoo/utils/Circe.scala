@@ -1,9 +1,13 @@
 package peschke.odoo.utils
 
-import cats.data.{Chain, NonEmptyChain, Validated}
+import cats.Eq
+import cats.Semigroup
+import cats.data.Chain
+import cats.data.NonEmptyChain
+import cats.data.Validated
 import cats.syntax.all._
-import cats.{Eq, Semigroup}
-import io.circe.Decoder.{AccumulatingResult, Result}
+import io.circe.Decoder.AccumulatingResult
+import io.circe.Decoder.Result
 import io.circe._
 import org.typelevel.ci.CIString
 
@@ -46,15 +50,14 @@ object Circe {
           tryDecodeAccumulating(c)
 
         override def tryDecodeAccumulating(c: ACursor): AccumulatingResult[A] =
-          lhs.tryDecodeAccumulating(c).recoverWith {
-            case lhsFailure => rhs.tryDecodeAccumulating(c).leftMap(lhsFailure.concatNel)
+          lhs.tryDecodeAccumulating(c).recoverWith { case lhsFailure =>
+            rhs.tryDecodeAccumulating(c).leftMap(lhsFailure.concatNel)
           }
       }
     }
 
   def anyOf[A](d0: Decoder[A], dN: Decoder[A]*): Decoder[A] =
     NonEmptyChain.fromChainPrepend(d0, Chain.fromSeq(dN)).reduce
-
 
   implicit final class DecoderHelpers(private val c: ACursor) extends AnyVal {
     def asAcc[A: Decoder]: AccumulatingResult[A] = Decoder[A].tryDecodeAccumulating(c)
@@ -63,4 +66,3 @@ object Circe {
   implicit val ciStringDecoder: Decoder[CIString] = Decoder[String].map(CIString(_))
   implicit val ciStringEncoder: Encoder[CIString] = Encoder[String].contramap(_.toString)
 }
-

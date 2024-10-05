@@ -1,24 +1,36 @@
 package peschke.odoo.algebras
 
+import cats.MonadThrow
+import cats.Show
 import cats.syntax.all._
-import cats.{MonadThrow, Show}
-import com.github.mustachejava.{DefaultMustacheFactory, Mustache}
+import com.github.mustachejava.DefaultMustacheFactory
+import com.github.mustachejava.Mustache
 import org.typelevel.log4cats.LoggerFactory
-import peschke.odoo.algebras.PickingNameGenerator.{EntryIndex, PickingIndex}
+import peschke.odoo.algebras.PickingNameGenerator.EntryIndex
+import peschke.odoo.algebras.PickingNameGenerator.PickingIndex
 import peschke.odoo.models.CheckedTemplate.PickingName
-import peschke.odoo.models.Template.{PickingNameTemplate, PickingTemplate, TimeOfDay}
-import peschke.odoo.models.{DayOfWeek, NewString, PosInt}
+import peschke.odoo.models.DayOfWeek
+import peschke.odoo.models.NewString
+import peschke.odoo.models.PosInt
+import peschke.odoo.models.Template.PickingNameTemplate
+import peschke.odoo.models.Template.PickingTemplate
+import peschke.odoo.models.Template.TimeOfDay
 
-import java.io.{StringReader, StringWriter}
-import java.time.format.{DateTimeFormatter, DateTimeFormatterBuilder}
+import java.io.StringReader
+import java.io.StringWriter
+import java.time.LocalDate
+import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
+import java.time.format.DateTimeFormatterBuilder
 import java.time.temporal.ChronoField
-import java.time.{LocalDate, ZonedDateTime}
 import scala.jdk.CollectionConverters._
 
 trait PickingNameGenerator[F[_]] {
-  def generate(picking: PickingTemplate, today: LocalDate, index: (EntryIndex, PickingIndex), timestamp: ZonedDateTime): F[PickingName]
+  def generate
+    (picking: PickingTemplate, today: LocalDate, index: (EntryIndex, PickingIndex), timestamp: ZonedDateTime)
+    : F[PickingName]
 }
-object PickingNameGenerator {
+object PickingNameGenerator      {
   def apply[F[_]](implicit PNG: PickingNameGenerator[F]): PNG.type = PNG
 
   object EntryIndex extends PosInt("entry index")
@@ -32,8 +44,9 @@ object PickingNameGenerator {
   }
   type IndexStr = IndexStr.Type
 
-  def default[F[_]: MonadThrow: LoggerFactory](globalNamePrefixOpt: Option[PickingNameTemplate],
-                                               globalNameSuffixOpt: Option[PickingNameTemplate]): PickingNameGenerator[F] =
+  def default[F[_]: MonadThrow: LoggerFactory]
+    (globalNamePrefixOpt: Option[PickingNameTemplate], globalNameSuffixOpt: Option[PickingNameTemplate])
+    : PickingNameGenerator[F] =
     new PickingNameGenerator[F] {
       private val logger = LoggerFactory[F].getLoggerFromClass(classOf[PickingNameGenerator[F]])
       private implicit val localDateShow: Show[LocalDate] = {
@@ -94,32 +107,36 @@ object PickingNameGenerator {
             )
           }
 
-      def runMustache(mustache: Mustache, today: LocalDate, timeOfDay: TimeOfDay, index: IndexStr, timestamp: ZonedDateTime): F[String] =
+      def runMustache
+        (mustache: Mustache, today: LocalDate, timeOfDay: TimeOfDay, index: IndexStr, timestamp: ZonedDateTime)
+        : F[String] =
         MonadThrow[F].catchNonFatal {
           val dayOfWeek = DayOfWeek.ofDay(today)
           val out = new StringWriter()
-          mustache.execute(out, Map(
-            "today" -> today.show,
-            "timeOfDay" -> timeOfDay.shortName,
-            "timeOfDayShort" -> timeOfDay.shortName,
-            "timeOfDayFull" -> timeOfDay.fullName,
-            "index" -> index.show,
-            "dayOfWeek" -> dayOfWeek.shortName,
-            "dayOfWeekShort" -> dayOfWeek.shortName,
-            "dayOfWeekFull" -> dayOfWeek.fullName,
-            "ts-date" -> timestampDateFormatter.format(timestamp),
-            "ts-HH:MM:SS" -> timestampFullTime24Formatter.format(timestamp),
-            "ts-12HH:MM:SS" -> timestampFullTime12Formatter.format(timestamp),
-            "ts-HH:MM" -> timestampShortTime24Formatter.format(timestamp),
-            "ts-12HH:MM" -> timestampShortTime12Formatter.format(timestamp)
-          ).asJava)
+          mustache.execute(
+            out,
+            Map(
+              "today" -> today.show,
+              "timeOfDay" -> timeOfDay.shortName,
+              "timeOfDayShort" -> timeOfDay.shortName,
+              "timeOfDayFull" -> timeOfDay.fullName,
+              "index" -> index.show,
+              "dayOfWeek" -> dayOfWeek.shortName,
+              "dayOfWeekShort" -> dayOfWeek.shortName,
+              "dayOfWeekFull" -> dayOfWeek.fullName,
+              "ts-date" -> timestampDateFormatter.format(timestamp),
+              "ts-HH:MM:SS" -> timestampFullTime24Formatter.format(timestamp),
+              "ts-12HH:MM:SS" -> timestampFullTime12Formatter.format(timestamp),
+              "ts-HH:MM" -> timestampShortTime24Formatter.format(timestamp),
+              "ts-12HH:MM" -> timestampShortTime12Formatter.format(timestamp)
+            ).asJava
+          )
           out.show
         }
 
-      override def generate(picking: PickingTemplate,
-                            today: LocalDate,
-                            rawIndex: (EntryIndex, PickingIndex),
-                            timestamp: ZonedDateTime): F[PickingName] = {
+      override def generate
+        (picking: PickingTemplate, today: LocalDate, rawIndex: (EntryIndex, PickingIndex), timestamp: ZonedDateTime)
+        : F[PickingName] = {
         val index = IndexStr(s"${rawIndex._1}.${rawIndex._2}")
 
         def fallBackToSimpleName: PickingName = PickingName(show"MOVE/$today/$index/${picking.timeOfDay.shortName}")

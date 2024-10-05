@@ -1,18 +1,27 @@
 package peschke.odoo.algebras
 
+import cats.Monad
+import cats.MonadThrow
+import cats.Show
 import cats.effect.Temporal
 import cats.effect.kernel.Resource
 import cats.syntax.all._
-import cats.{Monad, MonadThrow, Show}
+import io.circe.Decoder
+import io.circe.Encoder
+import io.circe.Json
 import io.circe.syntax._
-import io.circe.{Decoder, Encoder, Json}
+import org.http4s.Response
+import org.http4s.Status
 import org.http4s.circe.CirceEntityDecoder.circeEntityDecoder
 import org.http4s.client.Client
-import org.http4s.{Response, Status}
-import org.typelevel.log4cats.{LoggerFactory, SelfAwareStructuredLogger}
+import org.typelevel.log4cats.LoggerFactory
+import org.typelevel.log4cats.SelfAwareStructuredLogger
 import peschke.odoo.algebras.JsonRpc.RpcResponse
-import peschke.odoo.models.RpcServiceCall.{CommonService, ObjectService}
-import peschke.odoo.models.{BodyDecodingFailure, RpcServiceCall, UnexpectedStatus}
+import peschke.odoo.models.BodyDecodingFailure
+import peschke.odoo.models.RpcServiceCall
+import peschke.odoo.models.RpcServiceCall.CommonService
+import peschke.odoo.models.RpcServiceCall.ObjectService
+import peschke.odoo.models.UnexpectedStatus
 import peschke.odoo.utils.Circe._
 import upperbound.Limiter
 
@@ -21,7 +30,7 @@ import scala.concurrent.duration.FiniteDuration
 trait JsonRpc[F[_]] {
   def call(serviceCall: RpcServiceCall): F[RpcResponse]
 }
-object JsonRpc {
+object JsonRpc      {
   sealed trait Live
   sealed trait Dummy
 
@@ -36,17 +45,17 @@ object JsonRpc {
   implicit val responseEncoder: Encoder[RpcResponse] = Encoder.instance { rpc =>
     Json.obj(
       "jsonrpc" := rpc.jsonrpc,
-      "id" := rpc.id.asJson,
-      "result" := rpc.result
+      "id"      := rpc.id.asJson,
+      "result"  := rpc.result
     )
   }
   implicit val responseShow: Show[RpcResponse] = Show.show(_.asJson.spaces2)
 
   def apply[F[_]](implicit JR: JsonRpc[F]): JR.type = JR
 
-  def default[F[_]: Temporal: RequestBuilder: LoggerFactory](client: Client[F],
-                                                             limiter: Limiter[F],
-                                                             recoveryDelay: FiniteDuration): JsonRpc[F] with Live =
+  def default[F[_]: Temporal: RequestBuilder: LoggerFactory]
+    (client: Client[F], limiter: Limiter[F], recoveryDelay: FiniteDuration)
+    : JsonRpc[F] with Live =
     new JsonRpc[F] with Live {
       private val logger: SelfAwareStructuredLogger[F] = LoggerFactory[F].getLoggerFromClass(classOf[JsonRpc[F]])
 
@@ -55,13 +64,16 @@ object JsonRpc {
           Resource.sleep(recoveryDelay)
 
       private def parseResult(res: Response[F], serviceCall: RpcServiceCall): F[RpcResponse] =
-        res.as[RpcResponse].attempt.flatMap(_.fold(
-          throwable =>
-            RequestBuilder[F]
-              .requestCurl(serviceCall)
-              .flatMap(BodyDecodingFailure.liftTo[F, RpcResponse](_, throwable)),
-          _.pure[F]
-        ))
+        res
+          .as[RpcResponse].attempt.flatMap(
+            _.fold(
+              throwable =>
+                RequestBuilder[F]
+                  .requestCurl(serviceCall)
+                  .flatMap(BodyDecodingFailure.liftTo[F, RpcResponse](_, throwable)),
+              _.pure[F]
+            )
+          )
 
       override def call(serviceCall: RpcServiceCall): F[RpcResponse] =
         RequestBuilder[F].request(serviceCall).flatMap { req =>
@@ -83,7 +95,7 @@ object JsonRpc {
         }
     }
 
-  def dryRun[F[_] : Monad: LoggerFactory](mkResponse: RpcServiceCall => F[Json]): JsonRpc[F] with Dummy =
+  def dryRun[F[_]: Monad: LoggerFactory](mkResponse: RpcServiceCall => F[Json]): JsonRpc[F] with Dummy =
     new JsonRpc[F] with Dummy {
       private val logger = LoggerFactory[F].getLoggerFromClass(classOf[JsonRpc[F]])
 
@@ -94,12 +106,9 @@ object JsonRpc {
     }
 
   def readOnly[F[_]](live: JsonRpc[F] with Live, dryRun: JsonRpc[F] with Dummy): JsonRpc[F] = {
-    case
-      serviceCall@(CommonService.Version |
-                   CommonService.Login(_, _, _) |
-                   ObjectService.FieldsGet(_, _, _) |
-                   ObjectService.SearchRead(_, _, _, _, _) |
-                   ObjectService.Read(_, _, _, _)) => live.call(serviceCall)
+    case serviceCall @ (CommonService.Version | CommonService.Login(_, _, _) | ObjectService.FieldsGet(_, _, _) |
+        ObjectService.SearchRead(_, _, _, _, _) | ObjectService.Read(_, _, _, _)) =>
+      live.call(serviceCall)
     case serviceCall => dryRun.call(serviceCall)
   }
 

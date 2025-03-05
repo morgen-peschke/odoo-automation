@@ -1,32 +1,21 @@
 package peschke.odoo.algebras
 
-import cats.Monad
-import cats.MonadThrow
-import cats.Order
-import cats.data.NonEmptyList
-import cats.data.NonEmptySet
+import cats.{Monad, MonadThrow, Order}
+import cats.data.{NonEmptyList, NonEmptySet}
 import cats.effect.kernel.Clock
 import cats.syntax.all._
 import io.circe.Decoder
 import org.typelevel.log4cats.LoggerFactory
-import peschke.odoo.algebras.PickingNameGenerator.EntryIndex
-import peschke.odoo.algebras.PickingNameGenerator.PickingIndex
+import peschke.odoo.algebras.PickingNameGenerator.{EntryIndex, PickingIndex}
 import peschke.odoo.algebras.TemplateChecker.QuantityOnHand.CurrentQuantity
 import peschke.odoo.models.Action.Search.Condition.syntax._
-import peschke.odoo.models.RpcServiceCall.ObjectService.FieldName
-import peschke.odoo.models.RpcServiceCall.ObjectService.ModelName
-import peschke.odoo.models.Template.TimeOfDay.ScheduleAt
-import peschke.odoo.models.Template.TimeOfDay.ScheduleAtOverrides
+import peschke.odoo.models.RpcServiceCall.ObjectService.{FieldName, ModelName}
+import peschke.odoo.models.Template.TimeOfDay.{ScheduleAt, ScheduleAtOverrides}
 import peschke.odoo.models.Template._
 import peschke.odoo.models._
 import peschke.odoo.utils.Circe._
 
-import java.time.LocalDate
-import java.time.LocalDateTime
-import java.time.LocalTime
-import java.time.ZoneId
-import java.time.ZonedDateTime
-import java.time.{DayOfWeek => _}
+import java.time.{DayOfWeek => _, LocalDate, LocalDateTime, LocalTime, ZoneId, ZonedDateTime}
 
 trait TemplateChecker[F[_]] {
   def check
@@ -34,8 +23,7 @@ trait TemplateChecker[F[_]] {
      timesOpt: Option[NonEmptySet[TimeOfDay]],
      dateOverridesOpt: Option[NonEmptySet[DateOverride]],
      scheduleAtOverrides: ScheduleAtOverrides,
-     labelFilter: LabelFilter,
-     tagFilter: TagFilter
+     filters: TemplateFilters
     )
     : F[Option[NonEmptyList[CheckedTemplate]]]
 }
@@ -43,17 +31,17 @@ object TemplateChecker      {
   def apply[F[_]](implicit TC: TemplateChecker[F]): TC.type = TC
 
   def default[
-      F[_]: ServiceCallBuilder: JsonRpc: MonadThrow: LoggerFactory: PickingNameGenerator: DateOverrideResolver: Clock
+      F[_]: ServiceCallBuilder: JsonRpc: MonadThrow: LoggerFactory: PickingNameGenerator: DateOverrideResolver: Clock: TemplateFilterer
   ](zoneId: ZoneId): TemplateChecker[F] =
     new TemplateChecker[F] {
       private val logger = LoggerFactory[F].getLoggerFromClass(classOf[TemplateChecker[F]])
+
       override def check
         (template:            Template,
          timesOpt:            Option[NonEmptySet[TimeOfDay]],
          dateOverridesOpt:    Option[NonEmptySet[DateOverride]],
          scheduleAtOverrides: ScheduleAtOverrides,
-         labelFilter:         LabelFilter,
-         tagFilter:           TagFilter
+         filters:             TemplateFilters
         )
         : F[Option[NonEmptyList[CheckedTemplate]]] =
         for {
@@ -61,7 +49,7 @@ object TemplateChecker      {
           checkTimestamp <- Clock[F].realTimeInstant.map(ZonedDateTime.ofInstant(_, zoneId))
           time = timesOpt.getOrElse(TimeOfDay.All)
           scheduleAt = scheduleAtOverrides.asScheduleAt
-          checked        <- dates.traverse(checkTemplate(template, _, time, scheduleAt, checkTimestamp, labelFilter, tagFilter))
+          checked        <- dates.traverse(checkTemplate(template, _, time, scheduleAt, checkTimestamp, filters))
         } yield checked.sequence
 
       private def checkTemplate
@@ -70,14 +58,13 @@ object TemplateChecker      {
          times:          NonEmptySet[TimeOfDay],
          scheduleAt:     ScheduleAt,
          checkTimestamp: ZonedDateTime,
-         labelFilter:    LabelFilter,
-         tagFilter:      TagFilter
+         filters:        TemplateFilters
         )
         : F[Option[CheckedTemplate]] =
         template
           .entries.toList
           .traverseWithIndexM { (entry, index) =>
-            checkEntry(entry, today, times, EntryIndex(index), scheduleAt, checkTimestamp, labelFilter, tagFilter)
+            checkEntry(entry, today, times, EntryIndex(index), scheduleAt, checkTimestamp, filters)
           }
           .map(_.flatten)
           .map(NonEmptyList.fromList(_).map(CheckedTemplate(_)))
@@ -89,12 +76,11 @@ object TemplateChecker      {
          entryIndex:     EntryIndex,
          scheduleAt:     ScheduleAt,
          checkTimestamp: ZonedDateTime,
-         labelFilter:    LabelFilter,
-         tagFilter:      TagFilter
+         filters:        TemplateFilters
         )
         : F[Option[CheckedTemplate.Entry]] =
         logger.info(show"Checking entries for ${entry.label}") >>
-          Monad[F].ifM((checkLabel(entry, labelFilter), checkTags(entry, tagFilter)).mapN(_ && _))(
+          Monad[F].ifM(TemplateFilterer[F].keepEntry(entry, filters))(
             ifFalse = none[CheckedTemplate.Entry].pure[F],
             ifTrue = entry
               .pickings
@@ -106,7 +92,8 @@ object TemplateChecker      {
                   times,
                   entryIndex -> PickingIndex(pickingIndex),
                   scheduleAt,
-                  checkTimestamp
+                  checkTimestamp,
+                  filters
                 )
               }
               .map(_.flatten)
@@ -116,140 +103,107 @@ object TemplateChecker      {
               })
           )
 
-      private def checkLabel(entry: Template.Entry, labelFilter: LabelFilter): F[Boolean] =
-        labelFilter.textFilter match {
-          case TextFilter.True => true.pure[F]
-          case filter          =>
-            filter
-              .matches(entry.label.string)
-              .traverse(f => logger.info(show"${entry.label} matched string $f"))
-              .map(_.isDefined)
-              .flatTap {
-                case true  => logger.debug(s"${entry.label} passed label filters check")
-                case false => logger.info(s"Skipping entry because of label filters: ${entry.label}")
-              }
-        }
-
-      private def checkTags(entry: Template.Entry, tagFilter: TagFilter): F[Boolean] =
-        tagFilter match {
-          case TagFilter.Exists(TextFilter.truthy) => true.pure[F]
-          case TagFilter.Exists(filter)            =>
-            NonEmptyList.fromList {
-              entry
-                .tags
-                .flatMap(t => filter.matches(t.string).tupleLeft(t))
-            } match {
-              case Some(matches) =>
-                val tag = if (matches.length === 1) "tag" else "tags"
-                logger
-                  .info {
-                    matches
-                      .map { case t -> f =>
-                        show"[$t] $f"
-                      }
-                      .mkString_(show"Keeping entry because $tag matched filter\n  ", "\n  ", "")
-                  }.as(true)
-              case None          =>
-                logger.info(show"Skipping entry because no tag matched filter\n  $filter").as(false)
-            }
-          case TagFilter.ForAll(filter)            =>
-            NonEmptyList.fromList {
-              entry
-                .tags
-                .flatMap(t => filter.fails(t.string).tupleLeft(t))
-            } match {
-              case Some(matches) =>
-                val tag = if (matches.length === 1) "tag" else "tags"
-                logger
-                  .info {
-                    matches
-                      .map { case t -> f =>
-                        show"[$t] $f"
-                      }
-                      .mkString_(show"Skipping entry because $tag failed filter\n  ", "\n  ", "")
-                  }.as(false)
-              case None          =>
-                logger.info(show"Keeping entry because no tag matched filter\n  $filter").as(true)
-            }
-        }
-
       private def checkPicking
         (picking:        Template.PickingTemplate,
          today:          LocalDate,
          times:          NonEmptySet[Template.TimeOfDay],
          index:          (EntryIndex, PickingIndex),
          scheduleAt:     ScheduleAt,
-         checkTimestamp: ZonedDateTime
+         checkTimestamp: ZonedDateTime,
+         filters:        TemplateFilters
         )
         : F[Option[CheckedTemplate.PickingTemplate]] =
         PickingNameGenerator[F]
           .generate(picking, today, index, checkTimestamp)
           .flatMap { name =>
-            val shouldSkipBecauseOfDate = picking.frequency match {
-              case Frequency.Daily        => false
-              case Frequency.Weekly(days) => !days.contains(DayOfWeek.ofDay(today))
-            }
-
-            val shouldSkipBecauseOfTime = !times.contains(picking.timeOfDay)
-
             if (picking.disabled) logger.info(show"Skipping $name because it is disabled").as(none)
-            else if (shouldSkipBecauseOfDate) logger.debug(show"Skipping $name because of the day of the week").as(none)
-            else if (shouldSkipBecauseOfTime) logger.debug(show"Skipping $name because of the time of day").as(none)
             else
-              checkMoveSet(picking)
-                .flatMap(NonEmptyList.fromList(_) match {
-                  case None        => logger.info(show"Skipping $name because no moves need to be created").as(none)
-                  case Some(moves) =>
-                    CheckedTemplate
-                      .PickingTemplate(
-                        name,
-                        picking.frequency,
-                        ScheduledDate(
-                          LocalDateTime.of(
-                            today,
-                            picking.timeOfDay match {
-                              case TimeOfDay.Morning => TimeOfDay.MorningTime.raw(scheduleAt.am)
-                              case TimeOfDay.Noon    => LocalTime.NOON
-                              case TimeOfDay.Night   => TimeOfDay.NightTime.raw(scheduleAt.pm)
-                              case TimeOfDay.AnyTime => checkTimestamp.toLocalTime
-                            }
-                          )
-                        ),
-                        picking.moveType,
-                        picking.pickingTypeId,
-                        picking.locationId,
-                        picking.locationDestId,
-                        picking.partnerId,
-                        moves
-                      ).some.pure[F]
-                })
+              TemplateFilterer[F].keepPicking(picking, name, filters).flatMap { passedFilterChecks =>
+                val shouldSkipBecauseOfDate = picking.frequency match {
+                  case Frequency.Daily        => false
+                  case Frequency.Weekly(days) => !days.contains(DayOfWeek.ofDay(today))
+                }
+
+                val shouldSkipBecauseOfTime = !times.contains(picking.timeOfDay)
+
+                if (!passedFilterChecks) none[CheckedTemplate.PickingTemplate].pure[F]
+                else if (shouldSkipBecauseOfDate)
+                  logger.debug(show"Skipping $name because of the day of the week").as(none)
+                else if (shouldSkipBecauseOfTime) logger.debug(show"Skipping $name because of the time of day").as(none)
+                else
+                  checkMoveSet(picking, name, filters)
+                    .flatMap(NonEmptyList.fromList(_) match {
+                      case None        => logger.info(show"Skipping $name because no moves need to be created").as(none)
+                      case Some(moves) =>
+                        CheckedTemplate
+                          .PickingTemplate(
+                            name,
+                            picking.frequency,
+                            ScheduledDate(
+                              LocalDateTime.of(
+                                today,
+                                picking.timeOfDay match {
+                                  case TimeOfDay.Morning => TimeOfDay.MorningTime.raw(scheduleAt.am)
+                                  case TimeOfDay.Noon    => LocalTime.NOON
+                                  case TimeOfDay.Night   => TimeOfDay.NightTime.raw(scheduleAt.pm)
+                                  case TimeOfDay.AnyTime => checkTimestamp.toLocalTime
+                                }
+                              )
+                            ),
+                            picking.moveType,
+                            picking.pickingTypeId,
+                            picking.locationId,
+                            picking.locationDestId,
+                            picking.partnerId,
+                            moves
+                          ).some.pure[F]
+                    })
+              }
           }
 
-      private def checkMoveSet(picking: Template.PickingTemplate): F[List[CheckedTemplate.MoveTemplate]] =
+      private def checkMoveSet
+        (picking: Template.PickingTemplate, pickingName: CheckedTemplate.PickingName, filters: TemplateFilters)
+        : F[List[CheckedTemplate.MoveTemplate]] =
         picking.moves match {
-          case MoveTemplateSet.Explicit(moves) => moves.toList.flatTraverse(checkMove(picking, _).map(_.toList))
+          case MoveTemplateSet.Explicit(moves) =>
+            moves.toList.flatTraverse(checkMove(picking, pickingName, _, filters).map(_.toList))
           case MoveTemplateSet.All             =>
-            queryLocationContents(picking.locationId).map(_.map { case product -> quantity =>
-              CheckedTemplate.MoveTemplate(MoveName(ProductName.raw(product.name)), product.id, quantity)
+            queryLocationContents(picking.locationId.id).flatMap(_.flatTraverse { case product -> quantity =>
+              val move = MoveTemplate(
+                MoveName(product.nameOpt.getOrElse("???")),
+                product,
+                QuantityType.Add(quantity)
+              )
+              TemplateFilterer[F].keepMove(move, pickingName, filters).map {
+                case false => List.empty
+                case true  => CheckedTemplate.MoveTemplate(move.name, product, quantity) :: Nil
+              }
             })
         }
 
       private def checkMove
-        (picking: Template.PickingTemplate, move: Template.MoveTemplate)
+        (picking:     Template.PickingTemplate,
+         pickingName: CheckedTemplate.PickingName,
+         move:        Template.MoveTemplate,
+         filters:     TemplateFilters
+        )
         : F[Option[CheckedTemplate.MoveTemplate]] =
-        calculateQuantity(
-          move.productId,
-          picking.locationId,
-          picking.locationDestId,
-          move.quantityType
-        ).flatMap {
-          case None                  => logger.info(show"Skipping ${move.name}: current stock is at or over max quantity").as(none)
-          case Some(productQuantity) =>
-            CheckedTemplate.MoveTemplate(move.name, move.productId, productQuantity).some.pure[F]
-        }
+        Monad[F].ifM(TemplateFilterer[F].keepMove(move, pickingName, filters))(
+          ifFalse = none[CheckedTemplate.MoveTemplate].pure[F],
+          ifTrue = calculateQuantity(
+            move.productId.id,
+            picking.locationId.id,
+            picking.locationDestId.id,
+            move.quantityType
+          ).flatMap {
+            case None                  => logger.info(show"Skipping ${move.name}: current stock is at or over max quantity").as(none)
+            case Some(productQuantity) =>
+              CheckedTemplate.MoveTemplate(move.name, move.productId, productQuantity).some.pure[F]
+          }
+        )
 
       private def queryCurrentQuantity
-        (productId: ProductId, locationId: Either[LocationId, LocationDestId])
+        (productId: Product.Id, locationId: Either[Location.Id, LocationDest.Id])
         : F[CurrentQuantity] =
         ServiceCallBuilder[F]
           .fromAction(
@@ -272,7 +226,7 @@ object TemplateChecker      {
           }
           .map(_.map(_.quantity).foldLeft(CurrentQuantity.Zero)(_ plus _))
 
-      private def queryLocationContents(locationId: LocationId): F[List[(ProductInfo, Template.ProductQuantity)]] =
+      private def queryLocationContents(locationId: Location.Id): F[List[(Product, Template.ProductQuantity)]] =
         ServiceCallBuilder[F]
           .fromAction(
             Action.Search(
@@ -295,7 +249,7 @@ object TemplateChecker      {
           })
 
       private def calculateQuantity
-        (productId: ProductId, locationSrcId: LocationId, locationDestId: LocationDestId, quantityType: QuantityType)
+        (productId: Product.Id, locationSrcId: Location.Id, locationDestId: LocationDest.Id, quantityType: QuantityType)
         : F[Option[ProductQuantity]] =
         quantityType match {
           case QuantityType.Add(quantity)     => quantity.some.pure[F]
@@ -312,7 +266,7 @@ object TemplateChecker      {
         }
     }
 
-  final case class QuantityOnHand(product: ProductInfo, locationId: LocationId, quantity: CurrentQuantity)
+  final case class QuantityOnHand(product: Product, locationId: Location.Id, quantity: CurrentQuantity)
   object QuantityOnHand {
     val Model: ModelName = ModelName("stock.quant")
 
@@ -332,10 +286,10 @@ object TemplateChecker      {
     implicit val decoder: Decoder[QuantityOnHand] = accumulatingDecoder { c =>
       (
         (
-          c.downField("product_id").downArray.asAcc[ProductId],
-          c.downField("product_id").downN(1).asAcc[ProductName]
-        ).mapN(ProductInfo.apply),
-        c.downField("location_id").downArray.asAcc[LocationId],
+          c.downField("product_id").downArray.asAcc[Product.Id],
+          c.downField("product_id").downN(1).asAcc[String].map(_.some)
+        ).mapN(Product.fromId),
+        c.downField("location_id").downArray.asAcc[Location.Id],
         c.downField("quantity").asAcc[CurrentQuantity]
       ).mapN(QuantityOnHand.apply)
     }
@@ -344,8 +298,8 @@ object TemplateChecker      {
   object ProductName extends NonEmptyString("Product name")
   type ProductName = ProductName.Type
 
-  final case class ProductInfo(id: ProductId, name: ProductName)
+  final case class ProductInfo(id: Product.Id, name: ProductName)
   object ProductInfo {
-    implicit val order: Order[ProductInfo] = Order.by(p => ProductId.raw(p.id))
+    implicit val order: Order[ProductInfo] = Order.by(p => Product.Id.raw(p.id))
   }
 }

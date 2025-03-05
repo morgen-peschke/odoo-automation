@@ -13,10 +13,10 @@ import peschke.odoo.models.KnownIds
 import peschke.odoo.models.RpcServiceCall
 import peschke.odoo.models.RpcServiceCall.ObjectService.FieldName
 import peschke.odoo.models.RpcServiceCall.ObjectService.ModelName
-import peschke.odoo.models.Template.LocationId
+import peschke.odoo.models.Template.Location
 import peschke.odoo.models.Template.PartnerId
 import peschke.odoo.models.Template.PickingTypeId
-import peschke.odoo.models.Template.ProductId
+import peschke.odoo.models.Template.Product
 import peschke.odoo.utils.Circe._
 
 trait KnownIdsBuilder[F[_]] {
@@ -59,8 +59,8 @@ object KnownIdsBuilder      {
 
       override def build: F[KnownIds] =
         (
-          load[LocationId](KnownIds.locations, FieldName("complete_name")),
-          load[ProductId](KnownIds.products, name),
+          load[Location.Id](KnownIds.locations, FieldName("complete_name")),
+          load[Product.Id](KnownIds.products, name),
           load[PickingTypeId](KnownIds.pickingTypeIds, FieldName("display_name")),
           load[PartnerId](KnownIds.partners, name)
         ).tupled.flatMap(

@@ -189,6 +189,19 @@ class TextFilterParserTest extends ScalaCheckSuite {
     }
   }
 
+  test("TestFilter.default should parse 'ci:filter'") {
+    forAllNoShrink(terminalFilters) { case (input, filter) =>
+      assertEq(parser.parse(s"ci:$input"), TextFilter.ci(filter).asRight[String])
+    }
+  }
+
+  test("TestFilter.default should permit parens around Case Insensitive filter") {
+    forAllNoShrink(terminalFilters) { case (input, filter) =>
+      assertEq(parser.parse(s"ci:$input"), TextFilter.ci(filter).asRight[String], clue("Unchanged input"))
+      assertEq(parser.parse(s"ci:($input)"), TextFilter.ci(filter).asRight[String])
+    }
+  }
+
   // Binary Op Filters
 
   test("TestFilter.default should parse 'lhs and rhs' and 'lhs & rhs'") {

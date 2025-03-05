@@ -1,18 +1,14 @@
 package peschke.odoo.models
 
 import cats.Order
-import cats.data.NonEmptyList
-import cats.data.NonEmptySet
+import cats.data.{NonEmptyList, NonEmptySet}
 import cats.syntax.all._
-import io.circe.Decoder
-import io.circe.Encoder
+import io.circe.{Decoder, Encoder}
 import peschke.odoo.models.Template.Entry
 import supertagged.NewType
 
-import java.time.LocalDateTime
-import java.time.LocalTime
-import java.time.format.DateTimeFormatter
-import java.time.format.DateTimeParseException
+import java.time.format.{DateTimeFormatter, DateTimeParseException}
+import java.time.{LocalDateTime, LocalTime}
 
 final case class Template(entries: NonEmptyList[Entry])
 object Template {
@@ -46,11 +42,13 @@ object Template {
   object PickingTypeId extends PosInt("picking_type_id")
   type PickingTypeId = PickingTypeId.Type
 
-  object LocationId extends PosInt("location_id")
-  type LocationId = LocationId.Type
+  object LocationNewType extends MaybeNamedIdNewType("location_id")
+  val Location: LocationNewType.Wrapper.type = LocationNewType.Wrapper
+  type Location = LocationNewType.Wrapper
 
-  object LocationDestId extends PosInt("location_dest_id")
-  type LocationDestId = LocationDestId.Type
+  object LocationDestNewType extends MaybeNamedIdNewType("location_dest_id")
+  val LocationDest: LocationDestNewType.Wrapper.type = LocationDestNewType.Wrapper
+  type LocationDest = LocationDestNewType.Wrapper
 
   object PartnerId extends PosInt("partner_id")
   type PartnerId = PartnerId.Type
@@ -79,7 +77,7 @@ object Template {
     case object Noon    extends TimeOfDay("NN")
     case object Night   extends TimeOfDay("PM")
     case object AnyTime extends TimeOfDay("ANY") {
-      override def entryName: String = "ANY"
+      override def entryName: String = "Any"
     }
 
     def parse(raw: String): Either[String, TimeOfDay] = raw match {
@@ -147,8 +145,8 @@ object Template {
      pickingName: PickingNameTemplate,
      moveType: MoveType,
      pickingTypeId: PickingTypeId,
-     locationId: LocationId,
-     locationDestId: LocationDestId,
+     locationId: Location,
+     locationDestId: LocationDest,
      partnerId: PartnerId,
      disabled: Boolean,
      moves: MoveTemplateSet
@@ -157,8 +155,9 @@ object Template {
   object MoveName extends NonEmptyString("Move name")
   type MoveName = MoveName.Type
 
-  object ProductId extends PosInt("product_id")
-  type ProductId = ProductId.Type
+  object ProductIdNewType extends MaybeNamedIdNewType("product_id")
+  val Product: ProductIdNewType.Wrapper.type = ProductIdNewType.Wrapper
+  type Product = ProductIdNewType.Wrapper
 
   object ProductQuantity extends PosDouble("product_uom_qty")
   type ProductQuantity = ProductQuantity.Type
@@ -170,7 +169,7 @@ object Template {
     case object All                                     extends QuantityType
   }
 
-  final case class MoveTemplate(name: MoveName, productId: ProductId, quantityType: QuantityType)
+  final case class MoveTemplate(name: MoveName, productId: Product, quantityType: QuantityType)
 
   sealed trait MoveTemplateSet
   object MoveTemplateSet {

@@ -69,6 +69,7 @@ object TextFilterParser {
           (P.index.with1 ~ P.oneOf(
             List(
               P.ignoreCase("not:").orElse(P.char('!')).as(Token.Not.apply _),
+              P.ignoreCase("ci:").as(Token.CaseInsensitive.apply _),
               P.oneOf(
                 List(
                   P.ignoreCase("and").orElse(P.char('&')).as(Token.And.apply _),
@@ -106,10 +107,11 @@ object TextFilterParser {
                   case Nil          => accum.reverse.pure[F]
                   case head :: tail =>
                     head match {
-                      case and: Token.And         => clearOperatorStack(tail, and :: accum)
-                      case or: Token.Or           => clearOperatorStack(tail, or :: accum)
-                      case not: Token.Not         => clearOperatorStack(tail, not :: accum)
-                      case paren: Token.OpenParen =>
+                      case and: Token.And            => clearOperatorStack(tail, and :: accum)
+                      case or: Token.Or              => clearOperatorStack(tail, or :: accum)
+                      case not: Token.Not            => clearOperatorStack(tail, not :: accum)
+                      case ci: Token.CaseInsensitive => clearOperatorStack(tail, ci :: accum)
+                      case paren: Token.OpenParen    =>
                         raise(paren.start, FailWith(paren.start, "Unclosed paren"))
                     }
                 }
@@ -117,13 +119,14 @@ object TextFilterParser {
               clearOperatorStack(operatorStack, outputStack)
             case token :: rest =>
               token match {
-                case terminal: Token.Terminal   =>
+                case terminal: Token.Terminal        =>
                   loop(rest, terminal :: outputStack, operatorStack)
-                case operator: Token.And        => loop(rest, outputStack, operator :: operatorStack)
-                case operator: Token.Or         => loop(rest, outputStack, operator :: operatorStack)
-                case operator: Token.Not        => loop(rest, outputStack, operator :: operatorStack)
-                case operator: Token.OpenParen  => loop(rest, outputStack, operator :: operatorStack)
-                case Token.CloseParen(start, _) =>
+                case operator: Token.And             => loop(rest, outputStack, operator :: operatorStack)
+                case operator: Token.Or              => loop(rest, outputStack, operator :: operatorStack)
+                case operator: Token.Not             => loop(rest, outputStack, operator :: operatorStack)
+                case operator: Token.CaseInsensitive => loop(rest, outputStack, operator :: operatorStack)
+                case operator: Token.OpenParen       => loop(rest, outputStack, operator :: operatorStack)
+                case Token.CloseParen(start, _)      =>
                   @tailrec
                   def findParen
                     (newOutputStack: List[ReversePolishToken], newOperatorStack: List[OperatorToken])
@@ -132,13 +135,15 @@ object TextFilterParser {
                       case Nil                        => (newOutputStack, newOperatorStack)
                       case head :: remainingOperators =>
                         head match {
-                          case and: Token.And      =>
+                          case and: Token.And            =>
                             findParen(and :: newOutputStack, remainingOperators)
-                          case or: Token.Or        =>
+                          case or: Token.Or              =>
                             findParen(or :: newOutputStack, remainingOperators)
-                          case not: Token.Not      =>
+                          case not: Token.Not            =>
                             findParen(not :: newOutputStack, remainingOperators)
-                          case op: Token.OpenParen =>
+                          case ci: Token.CaseInsensitive =>
+                            findParen(ci :: newOutputStack, remainingOperators)
+                          case op: Token.OpenParen       =>
                             (newOutputStack, op :: remainingOperators)
                         }
                     }
@@ -180,21 +185,27 @@ object TextFilterParser {
               }
             case rpnToken :: remainingPending =>
               rpnToken match {
-                case terminal: Token.Terminal =>
+                case terminal: Token.Terminal  =>
                   loop(remainingPending, terminal :: buffer)
-                case not: Token.Not           =>
+                case not: Token.Not            =>
                   buffer match {
                     case terminal :: remainingFilters =>
                       loop(remainingPending, not(terminal) :: remainingFilters)
                     case _                            => raise(not.start, FailWith(not.start, "Missing argument for NOT"))
                   }
-                case and: Token.And           =>
+                case ci: Token.CaseInsensitive =>
+                  buffer match {
+                    case terminal :: remainingFilters =>
+                      loop(remainingPending, ci(terminal) :: remainingFilters)
+                    case _                            => raise(ci.start, FailWith(ci.start, "Missing argument for CASE_INSENSITIVE"))
+                  }
+                case and: Token.And            =>
                   buffer match {
                     case rhs :: lhs :: remainingFilters =>
                       loop(remainingPending, and(lhs, rhs) :: remainingFilters)
                     case _                              => raise(and.start, FailWith(and.start, "Missing argument(s) for AND"))
                   }
-                case or: Token.Or             =>
+                case or: Token.Or              =>
                   buffer match {
                     case rhs :: lhs :: remainingFilters =>
                       loop(remainingPending, or(lhs, rhs) :: remainingFilters)
@@ -258,6 +269,18 @@ object TextFilterParser {
         Terminal(
           other.minStart(start),
           TextFilter.not(other.filter),
+          other.maxEnd(end)
+        )
+    }
+
+    final case class CaseInsensitive(start: Int, end: Option[Int])
+        extends Token
+        with ReversePolishToken
+        with OperatorToken {
+      def apply(other: Terminal): Terminal =
+        Terminal(
+          other.minStart(start),
+          TextFilter.ci(other.filter),
           other.maxEnd(end)
         )
     }

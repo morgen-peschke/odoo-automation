@@ -17,12 +17,12 @@ object CheckedTemplate {
      scheduledDate: ScheduledDate,
      moveType: MoveType,
      pickingTypeId: PickingTypeId,
-     locationId: LocationId,
-     locationDestId: LocationDestId,
+     locationId: Location,
+     locationDestId: LocationDest,
      partnerId: PartnerId,
      moves: NonEmptyList[MoveTemplate]
     )
 
-  final case class MoveTemplate(name: MoveName, productId: ProductId, quantity: ProductQuantity)
+  final case class MoveTemplate(name: MoveName, productId: Product, quantity: ProductQuantity)
 
 }

@@ -6,15 +6,15 @@ import io.circe.Encoder
 import io.circe.Json
 import io.circe.syntax._
 import peschke.odoo.models.RpcServiceCall.ObjectService.ModelName
-import peschke.odoo.models.Template.LocationId
+import peschke.odoo.models.Template.Location
 import peschke.odoo.models.Template.PartnerId
 import peschke.odoo.models.Template.PickingTypeId
-import peschke.odoo.models.Template.ProductId
+import peschke.odoo.models.Template.Product
 import peschke.odoo.utils.Circe._
 
 final case class KnownIds
-  (locations: Map[String, LocationId],
-   products: Map[String, ProductId],
+  (locations: Map[String, Location.Id],
+   products: Map[String, Product.Id],
    pickingTypeIds: Map[String, PickingTypeId],
    partners: Map[String, PartnerId]
   )
@@ -28,8 +28,8 @@ object KnownIds {
 
   implicit val decoder: Decoder[KnownIds] = accumulatingDecoder { c =>
     (
-      c.downField(ModelName.raw(locations)).asAcc[Map[String, LocationId]],
-      c.downField(ModelName.raw(products)).asAcc[Map[String, ProductId]],
+      c.downField(ModelName.raw(locations)).asAcc[Map[String, Location.Id]],
+      c.downField(ModelName.raw(products)).asAcc[Map[String, Product.Id]],
       c.downField(ModelName.raw(pickingTypeIds)).asAcc[Map[String, PickingTypeId]],
       c.downField(ModelName.raw(partners)).asAcc[Map[String, PartnerId]]
     ).mapN(KnownIds.apply)

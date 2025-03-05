@@ -76,14 +76,15 @@ object AppConfig {
   object AppCommand {
     final case class DoAction(action: Action) extends AppCommand
 
+    final case class PlanPickings(createPickings: CreatePickings) extends AppCommand
+
     final case class CreatePickings
       (template: JsonLoader.Source,
        knownIdsOpt: Option[JsonLoader.Source],
        times: Option[NonEmptySet[TimeOfDay]],
        dateOverridesOpt: Option[NonEmptySet[DateOverride]],
        scheduleAtOverrides: ScheduleAtOverrides,
-       labelFilter: LabelFilter,
-       tagFilter: TagFilter
+       templateFilters: TemplateFilters
       ) extends AppCommand
     object CreatePickings {
       implicit val decoder: Decoder[CreatePickings] = accumulatingDecoder { c =>
@@ -96,8 +97,14 @@ object AppConfig {
             c.downField("am-time").asAcc[Option[TimeOfDay.MorningTime]],
             c.downField("pm-time").asAcc[Option[TimeOfDay.NightTime]]
           ).tupled.map(ScheduleAtOverrides(_)),
-          LabelFilter(TextFilter.truthy).valid,
-          TagFilter.Exists(TextFilter.truthy).valid
+          TemplateFilters(
+            LabelFilter(TextFilter.truthy),
+            TagFilter.Exists(TextFilter.truthy),
+            SourceLocationFilter(TextFilter.truthy),
+            DestinationLocationFilter(TextFilter.truthy),
+            PickingNameFilter(TextFilter.truthy),
+            ProductFilter(TextFilter.truthy)
+          ).valid
         ).mapN(CreatePickings.apply)
       }
     }

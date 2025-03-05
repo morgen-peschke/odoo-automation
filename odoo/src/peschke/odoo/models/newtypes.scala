@@ -9,7 +9,7 @@ import io.circe.Encoder
 import io.circe.KeyDecoder
 import io.circe.KeyEncoder
 
-import java.time.LocalTime
+import java.time.{LocalDate, LocalTime}
 import java.time.format.DateTimeFormatter
 import java.time.format.DateTimeParseException
 
@@ -45,6 +45,10 @@ trait NewString extends supertagged.NewType[String] {
       if (raw.isEmpty) List.empty[Type].valid
       else raw.split(',').toList.traverse(fromString(_).toValidatedNel)
     }
+
+  implicit final class NewStringOps(private val str: Type) {
+    def string: String = raw(str)
+  }
 }
 
 abstract class NonEmptyString(description: String) extends NewString {
@@ -119,4 +123,57 @@ abstract class NewLocalTime(val name: String) extends supertagged.NewType[LocalT
 object NewLocalTime {
   private val pattern = "HH:mm"
   private val formatter = DateTimeFormatter.ofPattern(pattern)
+}
+
+abstract class NewLocalDate(val name: String) extends supertagged.NewType[LocalDate] {
+  def fromLocalDate(t: LocalDate): Either[String, Type]
+
+  def fromString(s: String): Either[String, Type] =
+    Either
+      .catchOnly[DateTimeParseException](LocalDate.parse(s, NewLocalDate.formatter))
+      .leftMap(ex => s"Illegal $name: ${ex.getMessage}")
+      .flatMap(fromLocalDate(_).leftMap(e => s"Illegal $name: $e"))
+
+  implicit val show: Show[Type] = Show.show(raw(_).format(NewLocalDate.formatter))
+
+  implicit val decoder: Decoder[Type] = Decoder[String].emap(fromString)
+  implicit val encoder: Encoder[Type] = Encoder[String].contramap(raw(_).format(NewLocalDate.formatter))
+
+  implicit val argument: Argument[Type] = Argument.from(NewLocalDate.pattern) { raw =>
+    Argument[String].read(raw).andThen(fromString(_).toValidatedNel)
+  }
+}
+object NewLocalDate {
+  val pattern = "yyyy-MM-dd"
+  val formatter: DateTimeFormatter = DateTimeFormatter.ofPattern(pattern)
+}
+
+final case class MaybeKnownId[Id](id: Id, nameOpt: Option[String]) {
+  override def toString: String = nameOpt match {
+    case Some("") | None => s"Id($id)"
+    case Some(name)      => name
+  }
+}
+class MaybeNamedIdNewType(val name: String)                        {
+  final class Wrapper(val raw: MaybeKnownId[Wrapper.Id]) {
+    def id: Wrapper.Id = raw.id
+    def nameOpt: Option[String] = raw.nameOpt
+
+    override def toString: String = raw.toString
+  }
+  object Wrapper                                         {
+    object Id extends PosInt(name)
+    type Id = Id.Type
+
+    def fromInt(i: Int): Either[String, Wrapper] =
+      Id.fromInt(i).map(MaybeKnownId(_, none)).map(new Wrapper(_))
+
+    def fromId(i: Id, nameOpt: Option[String]): Wrapper =
+      new Wrapper(MaybeKnownId(i, nameOpt))
+
+    implicit val show: Show[Wrapper] = Show.fromToString
+
+    implicit val decoder: Decoder[Wrapper] = Decoder[Int].emap(fromInt)
+    implicit val encoder: Encoder[Wrapper] = Encoder[Int].contramap(l => Id.raw(l.id))
+  }
 }

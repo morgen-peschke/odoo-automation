@@ -2,6 +2,7 @@ package peschke.odoo.algebras
 
 import cats.MonadThrow
 import cats.data.NonEmptyList
+import cats.effect.std.Console
 import cats.syntax.all._
 import io.circe.syntax._
 import org.typelevel.log4cats.LoggerFactory
@@ -13,15 +14,31 @@ import peschke.odoo.models._
 
 trait PickingCreator[F[_]] {
   def create(createPickings: CreatePickings): F[Unit]
+
+  def summarize(pickings: CreatePickings): F[Unit]
 }
 object PickingCreator      {
   def apply[F[_]](implicit PC: PickingCreator[F]): PC.type = PC
 
   def default[
-      F[_]: ServiceCallBuilder: JsonRpc: MonadThrow: LoggerFactory: TemplateDecoder: TemplateChecker
+      F[_]: ServiceCallBuilder: JsonRpc: MonadThrow: LoggerFactory: TemplateDecoder: TemplateChecker: Console
   ]: PickingCreator[F] =
     new PickingCreator[F] {
       private val logger = LoggerFactory[F].getLoggerFromClass(classOf[PickingCreator[F]])
+
+      private def validate(createPickings: CreatePickings): F[Option[NonEmptyList[CheckedTemplate]]] =
+        TemplateDecoder[F]
+          .decode(createPickings.template, createPickings.knownIdsOpt)
+          .flatMap(
+            TemplateChecker[F].check(
+              _,
+              createPickings.times,
+              createPickings.dateOverridesOpt,
+              createPickings.scheduleAtOverrides,
+              createPickings.templateFilters
+            )
+          )
+
       private def processTemplate(template: CheckedTemplate): F[Unit] =
         template.entries.traverse(processEntry).map(_.reduce)
 
@@ -91,23 +108,39 @@ object PickingCreator      {
           )
 
       override def create(createPickings: CreatePickings): F[Unit] =
-        TemplateDecoder[F]
-          .decode(createPickings.template, createPickings.knownIdsOpt)
-          .flatMap(
-            TemplateChecker[F].check(
-              _,
-              createPickings.times,
-              createPickings.dateOverridesOpt,
-              createPickings.scheduleAtOverrides,
-              createPickings.labelFilter,
-              createPickings.tagFilter
-            )
-          )
-          .flatMap {
-            case None                   => logger.info("Nothing to create")
-            case Some(checkedTemplates) =>
-              checkedTemplates.traverse(processTemplate).map(_.reduce)
-          }
+        validate(createPickings).flatMap {
+          case None                   => logger.info("Nothing to create")
+          case Some(checkedTemplates) =>
+            checkedTemplates.traverse(processTemplate).map(_.reduce)
+        }
+
+      override def summarize(pickings: CreatePickings): F[Unit] = {
+        val out = Console[F]
+        validate(pickings).flatMap {
+          case None            => out.println("Nothing would be done.")
+          case Some(validated) =>
+            validated.traverse_(_.entries.traverse { entry =>
+              val labelBar = "=" * entry.label.string.length
+              out.println {
+                s"""
+                   |.=$labelBar=.
+                   || ${entry.label} |
+                   |'=$labelBar='""".stripMargin
+              } >> entry.pickings.traverse_ { picking =>
+                out.println {
+                  s""" ${picking.name}
+                     | ${"-" * picking.name.string.length}
+                     | ${picking.locationId} ~~> ${picking.locationDestId}""".stripMargin
+                } >> out.println {
+                  picking
+                    .moves.map { move =>
+                      s"  * ${move.productId} x ${move.quantity}"
+                    }.mkString_("\n")
+                }
+              }
+            })
+        }
+      }
     }
 
   private object Picking {

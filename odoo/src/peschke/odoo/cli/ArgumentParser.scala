@@ -1,48 +1,25 @@
 package peschke.odoo.cli
 
 import cats.Monad
-import cats.data.NonEmptyList
-import cats.data.NonEmptySet
-import cats.data.Validated
-import cats.data.ValidatedNel
+import cats.data.{NonEmptyList, NonEmptySet, Validated, ValidatedNel}
 import cats.syntax.all._
-import com.monovore.decline.Argument
-import com.monovore.decline.Command
-import com.monovore.decline.Help
-import com.monovore.decline.Opts
+import com.monovore.decline.{Argument, Command, Help, Opts}
 import fs2.io.file.Path
 import io.circe.Json
-import peschke.odoo.AppConfig
-import peschke.odoo.AppConfig.AppCommand
-import peschke.odoo.AppConfig.AuthConfig
-import peschke.odoo.AppConfig.DryRun
-import peschke.odoo.AppConfig.LoginCache
-import peschke.odoo.AppConfig.Verbose
-import peschke.odoo.JsonLoader
+import peschke.odoo.AppConfig.{AppCommand, AuthConfig, DryRun, LoginCache, Verbose}
+import peschke.odoo.{AppConfig, JsonLoader}
 import peschke.odoo.JsonLoader.Source
 import peschke.odoo.JsonLoader.Source.StdIn
 import peschke.odoo.algebras.TextFilterParser
-import peschke.odoo.models.Action.Fields
-import peschke.odoo.models.Action.Read
-import peschke.odoo.models.Action.Search
-import peschke.odoo.models.Action.Write
-import peschke.odoo.models.RpcServiceCall.ObjectService.FieldName
-import peschke.odoo.models.RpcServiceCall.ObjectService.Id
-import peschke.odoo.models.RpcServiceCall.ObjectService.ModelName
-import peschke.odoo.models.Template.PickingNameTemplate
-import peschke.odoo.models.Template.TimeOfDay
+import peschke.odoo.models.Action.{Fields, Read, Search, Write}
+import peschke.odoo.models.RpcServiceCall.ObjectService.{FieldName, Id, ModelName}
+import peschke.odoo.models.Template.{PickingNameTemplate, TimeOfDay}
 import peschke.odoo.models.Template.TimeOfDay.ScheduleAtOverrides
 import peschke.odoo.models._
-import peschke.odoo.models.authentication.ApiKey
-import peschke.odoo.models.authentication.Database
-import peschke.odoo.models.authentication.ServerUri
-import peschke.odoo.models.authentication.Username
+import peschke.odoo.models.authentication.{ApiKey, Database, ServerUri, Username}
 
 import java.nio.file.InvalidPathException
-import java.time.LocalDate
-import java.time.format.DateTimeFormatter
-import scala.concurrent.duration.DurationInt
-import scala.concurrent.duration.FiniteDuration
+import scala.concurrent.duration.{DurationInt, FiniteDuration}
 import scala.util.matching.Regex
 
 trait ArgumentParser[F[_]] {
@@ -95,6 +72,8 @@ object ArgumentParser      {
              |NOT_SYMBOL  := '!' FILTER
              |NOT         := NOT_ALPHA | NOT_SYMBOL
              |
+             |CASE_INSENSITIVE := 'ci:' FILTER
+             |
              |AND_ALPHA   := FILTER 'and' FILTER
              |AND_SYMBOL  := FILTER '&' FILTER
              |AND         := AND_ALPHA | AND_SYMBOL
@@ -103,7 +82,7 @@ object ArgumentParser      {
              |OR_SYMBOL   := FILTER '|' FILTER
              |OR          := OR_ALPHA | OR_SYMBOL
              |
-             |NO_PARENS   := FALSE | TRUE | EXACT | PREFIX | SUFFIX | CONTAINS | NOT | AND | OR
+             |NO_PARENS   := FALSE | TRUE | EXACT | PREFIX | SUFFIX | CONTAINS | NOT | AND | OR | CASE_INSENSITIVE
              |WITH_PARENS := '(' NO_PARENS ')'
              |FILTER      := WITH_PARENS | NO_PARENS
              |$error""".stripMargin
@@ -190,6 +169,9 @@ object ArgumentParser      {
         .andThen(_.traverse(parser))
     }
 
+  private def csvArgument[A: Argument](entryFormat: String, metaVar: String): Argument[NonEmptyList[A]] =
+    csvOpt(entryFormat, metaVar, Argument[A].read(_))
+
   implicit val timeOfDaySetArgument: Argument[NonEmptySet[TimeOfDay]] = {
     val entryNames = TimeOfDay.values.map(t => s"${t.shortName}|${t.fullName}").mkString("|")
     csvOpt(entryNames, "time", TimeOfDay.parse(_).toValidatedNel)
@@ -198,18 +180,11 @@ object ArgumentParser      {
 
   implicit val dayOfWeekArgument: Argument[NonEmptyList[DayOfWeek]] = {
     val entryNames = DayOfWeek.values.map(t => t.fullName).mkString("unique prefix of \"", "\", \"", "\"")
-    csvOpt(entryNames, "dayOfWeek", Argument[DayOfWeek].read(_))
+    csvArgument[DayOfWeek](entryNames, "dayOfWeek")
   }
 
-  implicit val intList: Argument[NonEmptyList[Int]] =
-    csvOpt("[0-9]", "i", s => s.toIntOption.filter(_ >= 0).toValidNel(s"$s is not a positive integer"))
-
-  implicit val localDateArgument: Argument[NonEmptyList[LocalDate]] = {
-    def parse(s: String) =
-      Either.catchNonFatal(LocalDate.parse(s, DateTimeFormatter.ISO_LOCAL_DATE)).leftMap(_.getMessage)
-
-    csvOpt("yyyy-MM-dd", "date", parse(_).toValidatedNel)
-  }
+//  implicit val intList: Argument[NonEmptyList[Int]] =
+//    csvOpt("[0-9]", "i", s => s.toIntOption.filter(_ >= 0).toValidNel(s"$s is not a positive integer"))
 
   private val readOpts: Opts[Action] =
     Opts.subcommand("read", help = "Read a record") {
@@ -254,60 +229,161 @@ object ArgumentParser      {
     }
 
   private val dateOverridesOpt: Opts[Option[NonEmptySet[DateOverride]]] = {
-    val today: Opts[NonEmptyList[DateOverride]] =
+    implicit val dateList: Argument[NonEmptyList[DateOverride.DateInThePast]] =
+      csvArgument[DateOverride.DateInThePast](NewLocalDate.pattern, "date")
+
+    implicit val deltaList: Argument[NonEmptyList[DateOverride.Delta]] = csvArgument[DateOverride.Delta]("[0-9]", "i")
+
+    val today: Opts[List[DateOverride]] =
       Opts
         .flag("today", help = "Create pickets for today (default)")
         .as(DateOverride.Today.pure[NonEmptyList])
+        .orEmpty
 
-    val yesterday: Opts[NonEmptyList[DateOverride]] =
+    val yesterday: Opts[List[DateOverride]] =
       Opts
         .flag("yesterday", help = "Create pickings for yesterday")
-        .as(DateOverride.DaysAgo(1).pure[NonEmptyList])
+        .as(DateOverride.OnDaysAgo(DateOverride.Delta(1)).pure[NonEmptyList])
+        .orEmpty
 
-    val daysAgo: Opts[NonEmptyList[DateOverride]] =
+    val onExactly: Opts[List[DateOverride]] =
       Opts
-        .options[NonEmptyList[Int]]("days-ago", help = "Create pickings for a date N days ago")
-        .map(_.flatten.map(DateOverride.DaysAgo))
+        .options[NonEmptyList[DateOverride.DateInThePast]]("on:date", help = "Create pickings for these dates")
+        .map(_.flatten.map(DateOverride.OnExactly))
+        .orEmpty
 
-    val last: Opts[NonEmptyList[DateOverride]] =
+    val sinceExactly: Opts[List[DateOverride]] =
       Opts
-        .options[NonEmptyList[DayOfWeek]]("last", help = "Create pickings for the immediately previous day of the week")
-        .map(_.flatten.map(DateOverride.Last))
+        .options[DateOverride.DateInThePast]("since:date", help = "Create pickings from this date until yesterday")
+        .map(_.map(DateOverride.SinceExactly))
+        .orEmpty
 
-    val exactly: Opts[NonEmptyList[DateOverride]] =
+    val onDaysAgo: Opts[List[DateOverride]] =
       Opts
-        .options[NonEmptyList[LocalDate]]("use-date", help = "Create pickings for this date")
-        .map(_.flatten.map(DateOverride.Exactly))
+        .options[NonEmptyList[DateOverride.Delta]]("on:days-ago", help = "Create pickings for dates N days ago")
+        .map(_.flatten.map(DateOverride.OnDaysAgo))
+        .orEmpty
 
-    (
-      today.orNone,
-      yesterday.orNone,
-      daysAgo.orNone,
-      last.orNone,
-      exactly.orNone
-    ).mapN(_ :: _ :: _ :: _ :: _ :: Nil).map(_.flatten).map(NonEmptyList.fromList).map(_.map(_.flatten.toNes))
+    val sinceDaysAgo: Opts[List[DateOverride]] =
+      Opts
+        .options[DateOverride.Delta](
+          "since:days-ago",
+          help = s"Create pickings for the last N days, not including today"
+        )
+        .map(_.map(DateOverride.SinceDaysAgo))
+        .orEmpty
+
+    val onLast: Opts[List[DateOverride]] =
+      Opts
+        .options[NonEmptyList[DayOfWeek]]("on:last", help = "Create pickings for immediately previous dates of the week")
+        .map(_.flatten.map(DateOverride.OnLast))
+        .orEmpty
+
+    val sinceLast: Opts[List[DateOverride]] =
+      Opts
+        .options[DayOfWeek](
+          "since:last",
+          help = "Create pickings since the immediately previous day of the week through yesterday"
+        )
+        .map(_.map(DateOverride.SinceLast))
+        .orEmpty
+
+    List(
+      today,
+      yesterday,
+      onExactly,
+      sinceExactly,
+      onDaysAgo,
+      sinceDaysAgo,
+      onLast,
+      sinceLast
+    ).foldA.map(NonEmptyList.fromList).map(_.map(_.toNes))
   }
 
   private val labelFilterOpts: Opts[LabelFilter] = {
     val parseAbleFilter =
       Opts
+        .option[TextFilter](long = "label", help = "Only create pickings with labels that match this filter")
+
+    val regexFilter =
+      Opts
+        .option[Regex](long = "label:regex", help = "Only create pickings with labels that match this filter")
+        .map(TextFilter.matches)
+
+    parseAbleFilter
+      .orElse(regexFilter)
+      .withDefault(TextFilter.truthy)
+      .map(LabelFilter)
+  }
+
+  private val pickingNameFilterOpts: Opts[PickingNameFilter] = {
+    val parseAbleFilter =
+      Opts
+        .option[TextFilter](long = "name", help = "Only create pickings with names that match this filter")
+
+    val regexFilter =
+      Opts
+        .option[Regex](long = "name:regex", help = "Only create pickings with names that match this filter")
+        .map(TextFilter.matches)
+
+    parseAbleFilter
+      .orElse(regexFilter)
+      .withDefault(TextFilter.truthy)
+      .map(PickingNameFilter)
+  }
+
+  private val sourceLocationFilterOpts: Opts[SourceLocationFilter] = {
+    val parseAbleFilter =
+      Opts
+        .option[TextFilter](long = "source", help = "Only create pickings with source locations that match this filter")
+
+    val regexFilter =
+      Opts
+        .option[Regex](long = "source:regex", help = "Only create pickings with source locations that match this filter")
+        .map(TextFilter.matches)
+
+    parseAbleFilter
+      .orElse(regexFilter)
+      .withDefault(TextFilter.truthy)
+      .map(SourceLocationFilter)
+  }
+
+  private val destLocationFilterOpts: Opts[DestinationLocationFilter] = {
+    val parseAbleFilter =
+      Opts
         .option[TextFilter](
-          long = "label",
-          help = "Only create pickings that match this filter"
+          long = "dest",
+          help = "Only create pickings with destination locations that match this filter"
         )
 
     val regexFilter =
       Opts
         .option[Regex](
-          long = "label:regex",
-          help = "Only create pickings that match this filter (for when --label is insufficient)"
+          long = "dest:regex",
+          help = "Only create pickings with destination locations that match this filter"
         )
         .map(TextFilter.matches)
 
     parseAbleFilter
       .orElse(regexFilter)
-      .map(LabelFilter)
-      .withDefault(LabelFilter(TextFilter.truthy))
+      .withDefault(TextFilter.truthy)
+      .map(DestinationLocationFilter)
+  }
+
+  private val productFilterOpts: Opts[ProductFilter] = {
+    val parseAbleFilter =
+      Opts
+        .option[TextFilter](long = "product", help = "Only create pickings with products that match this filter")
+
+    val regexFilter =
+      Opts
+        .option[Regex](long = "product:regex", help = "Only create pickings with products that match this filter")
+        .map(TextFilter.matches)
+
+    parseAbleFilter
+      .orElse(regexFilter)
+      .withDefault(TextFilter.truthy)
+      .map(ProductFilter)
   }
 
   private val tagFilterOpts: Opts[TagFilter] = {
@@ -350,25 +426,41 @@ object ArgumentParser      {
     exists.orElse(forAll).orElse(existsRegex).orElse(forAllRegex).withDefault(skip)
   }
 
-  private val createPickingOpts: Opts[AppCommand] =
-    Opts.subcommand("pickings", help = "Create pickings and moves from a template") {
+  private val templateFilterOpts: Opts[TemplateFilters] =
+    (
+      labelFilterOpts,
+      tagFilterOpts,
+      sourceLocationFilterOpts,
+      destLocationFilterOpts,
+      pickingNameFilterOpts,
+      productFilterOpts
+    ).mapN(TemplateFilters)
+
+  private val createPickingOpts: Opts[AppCommand.CreatePickings] =
+    (
+      Opts.option[Source]("template", help = "Template with pickings and moves"),
+      Opts.option[Source]("known-ids", help = "File with mappings from strings to known ids").orNone,
+      Opts
+        .option[NonEmptySet[TimeOfDay]](
+          "time-of-day",
+          help = "Only generate pickings for a specific time of day"
+        ).orNone,
+      dateOverridesOpt,
       (
-        Opts.option[Source]("template", help = "Template with pickings and moves"),
-        Opts.option[Source]("known-ids", help = "File with mappings from strings to known ids").orNone,
-        Opts
-          .option[NonEmptySet[TimeOfDay]](
-            "time-of-day",
-            help = "Only generate pickings for a specific time of day"
-          ).orNone,
-        dateOverridesOpt,
-        (
-          Opts.option[TimeOfDay.MorningTime]("am-time", help = "Time of day to schedule AM pickings").orNone,
-          Opts.option[TimeOfDay.NightTime]("pm-time", help = "Time of day to schedule PM pickings").orNone
-        ).tupled.map(ScheduleAtOverrides(_)),
-        labelFilterOpts,
-        tagFilterOpts
-      ).mapN(AppCommand.CreatePickings.apply)
-    }
+        Opts.option[TimeOfDay.MorningTime]("am-time", help = "Time of day to schedule AM pickings").orNone,
+        Opts.option[TimeOfDay.NightTime]("pm-time", help = "Time of day to schedule PM pickings").orNone
+      ).tupled.map(ScheduleAtOverrides(_)),
+      templateFilterOpts
+    ).mapN(AppCommand.CreatePickings.apply)
+
+  private val createPickingSubCmd: Opts[AppCommand] =
+    Opts.subcommand("pickings", help = "Create pickings and moves from a template")(createPickingOpts)
+
+  private val planPickingSubCmd: Opts[AppCommand] =
+    Opts.subcommand(
+      "plan",
+      help = "Identical in arguments to 'create', this only prints a report of what it would plan to do"
+    )(createPickingOpts.map(AppCommand.PlanPickings))
 
   private val generateKnownIds: Opts[AppCommand] =
     Opts.subcommand("generate-known-ids", help = "Generate a the JSON for a known ids file") {
@@ -384,7 +476,8 @@ object ArgumentParser      {
       .orElse(writeOpts)
       .orElse(createOpts)
       .map(AppCommand.DoAction)
-      .orElse(createPickingOpts)
+      .orElse(createPickingSubCmd)
+      .orElse(planPickingSubCmd)
       .orElse(generateKnownIds)
 
   private val appConfigViaParametersOpt: Opts[AppConfig] =

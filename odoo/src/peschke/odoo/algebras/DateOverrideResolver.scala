@@ -50,7 +50,7 @@ object DateOverrideResolver      {
             .map { today =>
               Iterator
                 .iterate(today)(_.minusDays(1L))
-                .slice(1, DateOverride.Delta.MaxSinceDays)
+                .take(DateOverride.Delta.MaxSinceDays)
                 .take(target)
                 .toList
             }
@@ -81,7 +81,7 @@ object DateOverrideResolver      {
 
               daysInPast
                 .zip(daysInPast.drop(1))
-                .slice(1, 8)
+                .take(8)
                 .map { case (dayBefore, dayOf) =>
                   (dayOf, DayOfWeek.ofDay(dayBefore))
                 }

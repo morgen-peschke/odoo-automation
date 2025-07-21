@@ -76,15 +76,14 @@ object AppConfig {
   object AppCommand {
     final case class DoAction(action: Action) extends AppCommand
 
-    final case class PlanPickings(createPickings: CreatePickings) extends AppCommand
-
     final case class CreatePickings
       (template: JsonLoader.Source,
        knownIdsOpt: Option[JsonLoader.Source],
        times: Option[NonEmptySet[TimeOfDay]],
        dateOverridesOpt: Option[NonEmptySet[DateOverride]],
        scheduleAtOverrides: ScheduleAtOverrides,
-       templateFilters: TemplateFilters
+       templateFilters: TemplateFilters,
+       printReportInstead: Boolean
       ) extends AppCommand
     object CreatePickings {
       implicit val decoder: Decoder[CreatePickings] = accumulatingDecoder { c =>
@@ -104,7 +103,8 @@ object AppConfig {
             DestinationLocationFilter(TextFilter.truthy),
             PickingNameFilter(TextFilter.truthy),
             ProductFilter(TextFilter.truthy)
-          ).valid
+          ).valid,
+          false.valid
         ).mapN(CreatePickings.apply)
       }
     }

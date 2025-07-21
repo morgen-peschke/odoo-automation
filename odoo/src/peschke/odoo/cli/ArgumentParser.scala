@@ -433,17 +433,18 @@ object ArgumentParser      {
         Opts.option[TimeOfDay.MorningTime]("am-time", help = "Time of day to schedule AM pickings").orNone,
         Opts.option[TimeOfDay.NightTime]("pm-time", help = "Time of day to schedule PM pickings").orNone
       ).tupled.map(ScheduleAtOverrides(_)),
-      templateFilterOpts
+      templateFilterOpts,
+      Opts
+        .flag(
+          "view-plan",
+          help = """Do not execute the pickings, print a report instead.
+                   |
+                   |Similar to what can be done with ODOO_DRY_RUN, but a bit easier to read.""".stripMargin
+        ).orFalse
     ).mapN(AppCommand.CreatePickings.apply)
 
   private val createPickingSubCmd: Opts[AppCommand] =
     Opts.subcommand("pickings", help = "Create pickings and moves from a template")(createPickingOpts)
-
-  private val planPickingSubCmd: Opts[AppCommand] =
-    Opts.subcommand(
-      "plan",
-      help = "Identical in arguments to 'pickings', this only prints a report of what it would plan to do"
-    )(createPickingOpts.map(AppCommand.PlanPickings))
 
   private val generateKnownIds: Opts[AppCommand] =
     Opts.subcommand("generate-known-ids", help = "Generate a the JSON for a known ids file") {
@@ -460,7 +461,6 @@ object ArgumentParser      {
       .orElse(createOpts)
       .map(AppCommand.DoAction)
       .orElse(createPickingSubCmd)
-      .orElse(planPickingSubCmd)
       .orElse(generateKnownIds)
 
   private val appConfigViaParametersOpt: Opts[AppConfig] =

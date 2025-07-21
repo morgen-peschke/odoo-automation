@@ -145,7 +145,8 @@ object Template {
   }
 
   final case class PickingTemplate
-    (frequency: Frequency,
+    (dayOfWeek: DayOfWeek,
+     restrictedToDayOfWeek: Option[DayOfWeek],
      timeOfDay: TimeOfDay,
      pickingName: PickingNameTemplate,
      moveType: MoveType,

@@ -13,7 +13,6 @@ object CheckedTemplate {
 
   final case class PickingTemplate
     (name: PickingName,
-     frequency: Frequency,
      scheduledDate: ScheduledDate,
      moveType: MoveType,
      pickingTypeId: PickingTypeId,

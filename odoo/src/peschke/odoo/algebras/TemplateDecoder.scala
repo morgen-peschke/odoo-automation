@@ -1,7 +1,7 @@
 package peschke.odoo.algebras
 
 import cats.MonadThrow
-import cats.data.{NonEmptyList, NonEmptySet}
+import cats.data.NonEmptyList
 import cats.syntax.all._
 import io.circe.{ACursor, Decoder, DecodingFailure}
 import peschke.odoo.JsonLoader
@@ -115,7 +115,7 @@ object TemplateDecoder      {
         ).tupled.andThen {
           case (frequency, timeOfDay, pickingName, moveType, pickingTypeId, partnerId, disabled, moves) =>
             val result = for {
-              dow <- frequency.daysOfWeek
+              dow <- frequency.expanded
               tod <- timeOfDay.expanded
             } yield {
               val locationIdDecoder = wrapLocationNewType(dow, tod)(LocationNewType)(knownIds.locations.get)
@@ -130,7 +130,8 @@ object TemplateDecoder      {
               ).mapN { (locationIdF, locationDestIdF) =>
                 (locationIdF, locationDestIdF).mapN { (locationId, locationDestId) =>
                   PickingTemplate(
-                    Frequency.Weekly(NonEmptySet.one(dow)),
+                    dow,
+                    Option.unless(frequency.isMocked)(dow),
                     tod,
                     pickingName,
                     moveType,

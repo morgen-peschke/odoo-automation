@@ -108,10 +108,15 @@ object PickingNameGenerator      {
           }
 
       def runMustache
-        (mustache: Mustache, today: LocalDate, timeOfDay: TimeOfDay, index: IndexStr, timestamp: ZonedDateTime)
+        (mustache:  Mustache,
+         today:     LocalDate,
+         dayOfWeek: DayOfWeek,
+         timeOfDay: TimeOfDay,
+         index:     IndexStr,
+         timestamp: ZonedDateTime
+        )
         : F[String] =
         MonadThrow[F].catchNonFatal {
-          val dayOfWeek = DayOfWeek.ofDay(today)
           val out = new StringWriter()
           mustache.execute(
             out,
@@ -147,7 +152,7 @@ object PickingNameGenerator      {
             val name = fallBackToSimpleName
             logger.warn(ex)(show"Unable to compile picking name template for $name").as(name)
           },
-          runMustache(_, today, picking.timeOfDay, index, timestamp).redeemWith(
+          runMustache(_, today, picking.dayOfWeek, picking.timeOfDay, index, timestamp).redeemWith(
             ex => {
               val name = fallBackToSimpleName
               logger.warn(ex)(show"Unable to execute picking name template for $name").as(name)

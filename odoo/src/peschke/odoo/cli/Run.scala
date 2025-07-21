@@ -16,7 +16,7 @@ import peschke.odoo.AppConfig
 import peschke.odoo.AppConfig.DryRun
 import peschke.odoo.AppConfig.Verbose
 import peschke.odoo.JsonLoader
-import peschke.odoo.algebras.{CommandRunner, DateOverrideResolver, Generator, JsonRpc, KnownIdsBuilder, LoginManager, PickingCreator, PickingNameGenerator, RequestBuilder, ServiceCallBuilder, TemplateChecker, TemplateDecoder, TemplateFilterer}
+import peschke.odoo.algebras.{CommandRunner, DateOverrideResolver, Generator, JsonRpc, KnownIdsBuilder, LocationNameExpander, LoginManager, PickingCreator, PickingNameGenerator, RequestBuilder, ServiceCallBuilder, TemplateChecker, TemplateDecoder, TemplateFilterer}
 import peschke.odoo.models.RpcServiceCall.CommonService
 import peschke.odoo.models.RpcServiceCall.ObjectService
 import upperbound.Limiter
@@ -42,6 +42,7 @@ object Run extends IOApp {
           implicit val jsonLoader: JsonLoader[IO] = JsonLoader.default[IO]
           implicit val loginManager: LoginManager[IO] = LoginManager.default[IO](config.loginCache, config.auth)
           implicit val serviceCallBuilder: ServiceCallBuilder[IO] = ServiceCallBuilder.default[IO](config.auth)
+          implicit val locationNameExpander: LocationNameExpander[IO] = LocationNameExpander.default[IO]
           implicit val templateDecoder: TemplateDecoder[IO] = TemplateDecoder.default[IO]
           implicit val requestBuilder: RequestBuilder[IO] = RequestBuilder.default[IO](config.auth.serverUrl)
           implicit val jsonRpc: JsonRpc[IO] = {

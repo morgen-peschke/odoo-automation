@@ -124,6 +124,7 @@ object PickingNameGenerator      {
               "dayOfWeek" -> dayOfWeek.shortName,
               "dayOfWeekShort" -> dayOfWeek.shortName,
               "dayOfWeekFull" -> dayOfWeek.fullName,
+              "dayOfWeekIndex" -> dayOfWeek.index.show,
               "ts-date" -> timestampDateFormatter.format(timestamp),
               "ts-HH:MM:SS" -> timestampFullTime24Formatter.format(timestamp),
               "ts-12HH:MM:SS" -> timestampFullTime12Formatter.format(timestamp),

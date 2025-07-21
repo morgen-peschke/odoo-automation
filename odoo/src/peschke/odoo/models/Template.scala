@@ -71,6 +71,8 @@ object Template {
 
     def unapply(raw: String): Boolean =
       shortName.equalsIgnoreCase(raw) || fullName.equalsIgnoreCase(raw)
+
+    def expanded: NonEmptyList[TimeOfDay] = NonEmptyList.one(this)
   }
   object TimeOfDay                                       extends enumeratum.Enum[TimeOfDay] {
     case object Morning extends TimeOfDay("AM")
@@ -78,12 +80,15 @@ object Template {
     case object Night   extends TimeOfDay("PM")
     case object AnyTime extends TimeOfDay("ANY") {
       override def entryName: String = "Any"
+
+      override def expanded: NonEmptyList[TimeOfDay] = NonEmptyList.of(Morning, Noon, Night)
     }
 
     def parse(raw: String): Either[String, TimeOfDay] = raw match {
       case Morning() => Morning.asRight
       case Noon()    => Noon.asRight
       case Night()   => Night.asRight
+      case AnyTime() => AnyTime.asRight
       case _         => "Expected on of: Morning, AM, Noon, Night, PM, or ANY".asLeft
     }
 

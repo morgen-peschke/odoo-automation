@@ -390,40 +390,23 @@ object ArgumentParser      {
     val exists =
       Opts
         .option[TextFilter](
-          long = "tag:exists",
-          help = "Only create pickings when at least one tag that matches this filter"
+          long = "tag",
+          help = "Only create pickings when at least one tag matches this filter"
         )
         .map(TagFilter.Exists)
 
     val existsRegex =
       Opts
         .option[Regex](
-          long = "tag:exists:regex",
-          help = "Only create pickings when at least one tag that matches this regex"
+          long = "tag:regex",
+          help = "Only create pickings when at least one tag matches this regex"
         )
         .map(TextFilter.matches)
         .map(TagFilter.Exists)
 
-    val forAll =
-      Opts
-        .option[TextFilter](
-          long = "tag:forAll",
-          help = "Only create pickings when all tags match this filter"
-        )
-        .map(TagFilter.ForAll)
-
-    val forAllRegex =
-      Opts
-        .option[Regex](
-          long = "tag:forAll:regex",
-          help = "Only create pickings when all tags match this regex"
-        )
-        .map(TextFilter.matches)
-        .map(TagFilter.ForAll)
-
     val skip = TagFilter.Exists(TextFilter.truthy)
 
-    exists.orElse(forAll).orElse(existsRegex).orElse(forAllRegex).withDefault(skip)
+    exists.orElse(existsRegex).withDefault(skip)
   }
 
   private val templateFilterOpts: Opts[TemplateFilters] =
@@ -459,7 +442,7 @@ object ArgumentParser      {
   private val planPickingSubCmd: Opts[AppCommand] =
     Opts.subcommand(
       "plan",
-      help = "Identical in arguments to 'create', this only prints a report of what it would plan to do"
+      help = "Identical in arguments to 'pickings', this only prints a report of what it would plan to do"
     )(createPickingOpts.map(AppCommand.PlanPickings))
 
   private val generateKnownIds: Opts[AppCommand] =

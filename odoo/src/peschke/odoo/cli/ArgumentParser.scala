@@ -444,11 +444,17 @@ object ArgumentParser      {
         .options[SkippableChecks](
           long = "skip-check",
           help = "Skip this check when generating the plan"
-        ).orEmpty
+        )
+        .map(_.toList)
+
+    val skipAllChecks =
+      Opts
+        .flag(long = "no-checks", help = "Equivalent to calling --skip-check with all possible arguments")
+        .as(SkippableChecks.values.toList)
 
     createOpts
       .orElse {
-        (viewPlanOpts, checksToSkipOpts).mapN { (_, checks) =>
+        (viewPlanOpts, checksToSkipOpts.orElse(skipAllChecks).withDefault(Nil)).mapN { (_, checks) =>
           PickingCreator.PickingOperation.PrintPlan(checks.toSet)
         }
       }

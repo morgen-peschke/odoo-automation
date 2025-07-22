@@ -7,15 +7,13 @@ import cats.syntax.all._
 import io.circe.syntax._
 import org.typelevel.log4cats.LoggerFactory
 import peschke.odoo.AppConfig.AppCommand.CreatePickings
+import peschke.odoo.algebras.TemplateChecker.SkippableChecks
 import peschke.odoo.models.CheckedTemplate._
-import peschke.odoo.models.RpcServiceCall.ObjectService.FieldName
-import peschke.odoo.models.RpcServiceCall.ObjectService.ModelName
+import peschke.odoo.models.RpcServiceCall.ObjectService.{FieldName, ModelName}
 import peschke.odoo.models._
 
 trait PickingCreator[F[_]] {
-  def create(createPickings: CreatePickings): F[Unit]
-
-  def summarize(pickings: CreatePickings): F[Unit]
+  def run(createPickings: CreatePickings): F[Unit]
 }
 object PickingCreator      {
   def apply[F[_]](implicit PC: PickingCreator[F]): PC.type = PC
@@ -35,7 +33,11 @@ object PickingCreator      {
               createPickings.times,
               createPickings.dateOverridesOpt,
               createPickings.scheduleAtOverrides,
-              createPickings.templateFilters
+              createPickings.templateFilters,
+              createPickings.operation match {
+                case PickingOperation.Create                  => Set.empty[SkippableChecks]
+                case PickingOperation.PrintPlan(checksToSkip) => checksToSkip
+              }
             )
           )
 
@@ -107,41 +109,52 @@ object PickingCreator      {
             )
           )
 
-      override def create(createPickings: CreatePickings): F[Unit] =
-        validate(createPickings).flatMap {
-          case None                   => logger.info("Nothing to create")
-          case Some(checkedTemplates) =>
-            checkedTemplates.traverse(processTemplate).map(_.reduce)
-        }
-
-      override def summarize(pickings: CreatePickings): F[Unit] = {
+      private def printPlan(templates: NonEmptyList[CheckedTemplate]): F[Unit] = {
         val out = Console[F]
-        validate(pickings).flatMap {
-          case None            => out.println("Nothing would be done.")
-          case Some(validated) =>
-            validated.traverse_(_.entries.traverse { entry =>
-              val labelBar = "=" * entry.label.string.length
-              out.println {
-                s"""
-                   |.=$labelBar=.
-                   || ${entry.label} |
-                   |'=$labelBar='""".stripMargin
-              } >> entry.pickings.traverse_ { picking =>
-                out.println {
-                  s""" ${picking.name}
-                     | ${"-" * picking.name.string.length}
-                     | ${picking.locationId} ~~> ${picking.locationDestId}""".stripMargin
-                } >> out.println {
-                  picking
-                    .moves.map { move =>
-                      s"  * ${move.productId} x ${move.quantity}"
-                    }.mkString_("\n")
-                }
-              }
-            })
-        }
+        templates.traverse_(_.entries.traverse { entry =>
+          val labelBar = "=" * entry.label.string.length
+          out.println {
+            s"""
+               |.=$labelBar=.
+               || ${entry.label} |
+               |'=$labelBar='""".stripMargin
+          } >> entry.pickings.traverse_ { picking =>
+            out.println {
+              s""" ${picking.name}
+                 | ${"-" * picking.name.string.length}
+                 | ${picking.locationId} ~~> ${picking.locationDestId}""".stripMargin
+            } >> out.println {
+              picking
+                .moves.map { move =>
+                  s"  * ${move.productId} x ${move.quantity}"
+                }.mkString_("\n")
+            } >> out.println("")
+          }
+        })
       }
+
+      override def run(createPickings: CreatePickings): F[Unit] =
+        validate(createPickings).flatMap { checkedTemplates =>
+          createPickings.operation match {
+            case PickingOperation.Create       =>
+              checkedTemplates match {
+                case None                   => logger.info("Nothing to create")
+                case Some(checkedTemplates) => checkedTemplates.traverse(processTemplate).map(_.reduce)
+              }
+            case PickingOperation.PrintPlan(_) =>
+              checkedTemplates match {
+                case None                   => logger.info("No actionable templates")
+                case Some(checkedTemplates) => printPlan(checkedTemplates)
+              }
+          }
+        }
     }
+
+  sealed trait PickingOperation
+  object PickingOperation {
+    case object Create                                             extends PickingOperation
+    final case class PrintPlan(checksToSkip: Set[SkippableChecks]) extends PickingOperation
+  }
 
   private object Picking {
     object Id extends PosInt("stock.picking")

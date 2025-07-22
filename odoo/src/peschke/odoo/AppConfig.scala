@@ -12,6 +12,7 @@ import peschke.odoo.AppConfig.AuthConfig
 import peschke.odoo.AppConfig.DryRun
 import peschke.odoo.AppConfig.LoginCache
 import peschke.odoo.AppConfig.Verbose
+import peschke.odoo.algebras.PickingCreator
 import peschke.odoo.models.Template.PickingNameTemplate
 import peschke.odoo.models.Template.TimeOfDay
 import peschke.odoo.models.Template.TimeOfDay.ScheduleAtOverrides
@@ -83,7 +84,7 @@ object AppConfig {
        dateOverridesOpt: Option[NonEmptySet[DateOverride]],
        scheduleAtOverrides: ScheduleAtOverrides,
        templateFilters: TemplateFilters,
-       printReportInstead: Boolean
+       operation: PickingCreator.PickingOperation
       ) extends AppCommand
     object CreatePickings {
       implicit val decoder: Decoder[CreatePickings] = accumulatingDecoder { c =>
@@ -104,7 +105,7 @@ object AppConfig {
             PickingNameFilter(TextFilter.truthy),
             ProductFilter(TextFilter.truthy)
           ).valid,
-          false.valid
+          PickingCreator.PickingOperation.Create.valid
         ).mapN(CreatePickings.apply)
       }
     }

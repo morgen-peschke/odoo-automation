@@ -1,13 +1,15 @@
 package peschke.odoo.algebras
 
-import cats.{Monad, MonadThrow, Order}
 import cats.data.{NonEmptyList, NonEmptySet}
 import cats.effect.kernel.Clock
 import cats.syntax.all._
+import cats.{Monad, MonadThrow, Order}
 import io.circe.Decoder
 import org.typelevel.log4cats.LoggerFactory
 import peschke.odoo.algebras.PickingNameGenerator.{EntryIndex, PickingIndex}
 import peschke.odoo.algebras.TemplateChecker.QuantityOnHand.CurrentQuantity
+import peschke.odoo.algebras.TemplateChecker.SkippableChecks
+import peschke.odoo.algebras.TemplateChecker.SkippableChecks.DisabledFlag
 import peschke.odoo.models.Action.Search.Condition.syntax._
 import peschke.odoo.models.RpcServiceCall.ObjectService.{FieldName, ModelName}
 import peschke.odoo.models.Template.TimeOfDay.{ScheduleAt, ScheduleAtOverrides}
@@ -23,7 +25,8 @@ trait TemplateChecker[F[_]] {
      timesOpt: Option[NonEmptySet[TimeOfDay]],
      dateOverridesOpt: Option[NonEmptySet[DateOverride]],
      scheduleAtOverrides: ScheduleAtOverrides,
-     filters: TemplateFilters
+     filters: TemplateFilters,
+     checksToSkip: Set[SkippableChecks]
     )
     : F[Option[NonEmptyList[CheckedTemplate]]]
 }
@@ -41,7 +44,8 @@ object TemplateChecker      {
          timesOpt:            Option[NonEmptySet[TimeOfDay]],
          dateOverridesOpt:    Option[NonEmptySet[DateOverride]],
          scheduleAtOverrides: ScheduleAtOverrides,
-         filters:             TemplateFilters
+         filters:             TemplateFilters,
+         checksToSkip:        Set[SkippableChecks]
         )
         : F[Option[NonEmptyList[CheckedTemplate]]] =
         for {
@@ -49,7 +53,7 @@ object TemplateChecker      {
           checkTimestamp <- Clock[F].realTimeInstant.map(ZonedDateTime.ofInstant(_, zoneId))
           time = timesOpt.getOrElse(TimeOfDay.All)
           scheduleAt = scheduleAtOverrides.asScheduleAt
-          checked        <- dates.traverse(checkTemplate(template, _, time, scheduleAt, checkTimestamp, filters))
+          checked        <- dates.traverse(checkTemplate(template, _, time, scheduleAt, checkTimestamp, filters, checksToSkip))
         } yield checked.sequence
 
       private def checkTemplate
@@ -58,13 +62,14 @@ object TemplateChecker      {
          times:          NonEmptySet[TimeOfDay],
          scheduleAt:     ScheduleAt,
          checkTimestamp: ZonedDateTime,
-         filters:        TemplateFilters
+         filters:        TemplateFilters,
+         checksToSkip:   Set[SkippableChecks]
         )
         : F[Option[CheckedTemplate]] =
         template
           .entries.toList
           .traverseWithIndexM { (entry, index) =>
-            checkEntry(entry, today, times, EntryIndex(index), scheduleAt, checkTimestamp, filters)
+            checkEntry(entry, today, times, EntryIndex(index), scheduleAt, checkTimestamp, filters, checksToSkip)
           }
           .map(_.flatten)
           .map(NonEmptyList.fromList(_).map(CheckedTemplate(_)))
@@ -76,7 +81,8 @@ object TemplateChecker      {
          entryIndex:     EntryIndex,
          scheduleAt:     ScheduleAt,
          checkTimestamp: ZonedDateTime,
-         filters:        TemplateFilters
+         filters:        TemplateFilters,
+         checksToSkip:   Set[SkippableChecks]
         )
         : F[Option[CheckedTemplate.Entry]] =
         logger.info(show"Checking entries for ${entry.label}") >>
@@ -93,7 +99,8 @@ object TemplateChecker      {
                   entryIndex -> PickingIndex(pickingIndex),
                   scheduleAt,
                   checkTimestamp,
-                  filters
+                  filters,
+                  checksToSkip
                 )
               }
               .map(_.flatten)
@@ -110,13 +117,15 @@ object TemplateChecker      {
          index:          (EntryIndex, PickingIndex),
          scheduleAt:     ScheduleAt,
          checkTimestamp: ZonedDateTime,
-         filters:        TemplateFilters
+         filters:        TemplateFilters,
+         checksToSkip:   Set[SkippableChecks]
         )
         : F[Option[CheckedTemplate.PickingTemplate]] =
         PickingNameGenerator[F]
           .generate(picking, today, index, checkTimestamp)
           .flatMap { name =>
-            if (picking.disabled) logger.info(show"Skipping $name because it is disabled").as(none)
+            if (picking.disabled && !checksToSkip.contains(DisabledFlag))
+              logger.info(show"Skipping $name because it is disabled").as(none)
             else
               TemplateFilterer[F].keepPicking(picking, name, filters).flatMap { passedFilterChecks =>
                 val shouldSkipBecauseOfDate = picking.restrictedToDayOfWeek match {
@@ -130,7 +139,7 @@ object TemplateChecker      {
                   logger.debug(show"Skipping $name because of the day of the week").as(none)
                 else if (shouldSkipBecauseOfTime) logger.debug(show"Skipping $name because of the time of day").as(none)
                 else
-                  checkMoveSet(picking, name, filters)
+                  checkMoveSet(picking, name, filters, checksToSkip)
                     .flatMap(NonEmptyList.fromList(_) match {
                       case None        => logger.info(show"Skipping $name because no moves need to be created").as(none)
                       case Some(moves) =>
@@ -160,11 +169,15 @@ object TemplateChecker      {
           }
 
       private def checkMoveSet
-        (picking: Template.PickingTemplate, pickingName: CheckedTemplate.PickingName, filters: TemplateFilters)
+        (picking:      Template.PickingTemplate,
+         pickingName:  CheckedTemplate.PickingName,
+         filters:      TemplateFilters,
+         checksToSkip: Set[SkippableChecks]
+        )
         : F[List[CheckedTemplate.MoveTemplate]] =
         picking.moves match {
           case MoveTemplateSet.Explicit(moves) =>
-            moves.toList.flatTraverse(checkMove(picking, pickingName, _, filters).map(_.toList))
+            moves.toList.flatTraverse(checkMove(picking, pickingName, _, filters, checksToSkip).map(_.toList))
           case MoveTemplateSet.All             =>
             queryLocationContents(picking.locationId.id).flatMap(_.flatTraverse { case product -> quantity =>
               val move = MoveTemplate(
@@ -180,23 +193,38 @@ object TemplateChecker      {
         }
 
       private def checkMove
-        (picking:     Template.PickingTemplate,
-         pickingName: CheckedTemplate.PickingName,
-         move:        Template.MoveTemplate,
-         filters:     TemplateFilters
+        (picking:      Template.PickingTemplate,
+         pickingName:  CheckedTemplate.PickingName,
+         move:         Template.MoveTemplate,
+         filters:      TemplateFilters,
+         checksToSkip: Set[SkippableChecks]
         )
         : F[Option[CheckedTemplate.MoveTemplate]] =
         Monad[F].ifM(TemplateFilterer[F].keepMove(move, pickingName, filters))(
           ifFalse = none[CheckedTemplate.MoveTemplate].pure[F],
-          ifTrue = calculateQuantity(
-            move.productId.id,
-            picking.locationId.id,
-            picking.locationDestId.id,
-            move.quantityType
-          ).flatMap {
-            case None                  => logger.info(show"Skipping ${move.name}: current stock is at or over max quantity").as(none)
-            case Some(productQuantity) =>
-              CheckedTemplate.MoveTemplate(move.name, move.productId, productQuantity).some.pure[F]
+          ifTrue = {
+            def runCheck: F[Option[CheckedTemplate.MoveTemplate]] = calculateQuantity(
+              move.productId.id,
+              picking.locationId.id,
+              picking.locationDestId.id,
+              move.quantityType
+            ).flatMap {
+              case None                  =>
+                logger.info(show"Skipping ${move.name}: current stock is at or over max quantity").as(none)
+              case Some(productQuantity) =>
+                CheckedTemplate.MoveTemplate(move.name, move.productId, productQuantity).some.pure[F]
+            }
+
+            if (checksToSkip.contains(SkippableChecks.Quantity))
+              move.quantityType match {
+                case QuantityType.Add(quantity)     =>
+                  CheckedTemplate.MoveTemplate(move.name, move.productId, quantity).some.pure[F]
+                case QuantityType.Fill(maxQuantity) =>
+                  CheckedTemplate.MoveTemplate(move.name, move.productId, maxQuantity).some.pure[F]
+                case QuantityType.All               => runCheck
+
+              }
+            else runCheck
           }
         )
 
@@ -263,6 +291,14 @@ object TemplateChecker      {
               }
         }
     }
+
+  sealed trait SkippableChecks extends enumeratum.EnumEntry with enumeratum.EnumEntry.Hyphencase
+  object SkippableChecks       extends enumeratum.Enum[SkippableChecks] {
+    case object DisabledFlag extends SkippableChecks
+    case object Quantity     extends SkippableChecks
+
+    override val values: IndexedSeq[SkippableChecks] = findValues
+  }
 
   final case class QuantityOnHand(product: Product, locationId: Location.Id, quantity: CurrentQuantity)
   object QuantityOnHand {

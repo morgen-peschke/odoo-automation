@@ -10,13 +10,15 @@ import peschke.odoo.AppConfig.{AppCommand, AuthConfig, DryRun, LoginCache, Verbo
 import peschke.odoo.{AppConfig, JsonLoader}
 import peschke.odoo.JsonLoader.Source
 import peschke.odoo.JsonLoader.Source.StdIn
-import peschke.odoo.algebras.TextFilterParser
+import peschke.odoo.algebras.TemplateChecker.SkippableChecks
+import peschke.odoo.algebras.{PickingCreator, TextFilterParser}
 import peschke.odoo.models.Action.{Fields, Read, Search, Write}
 import peschke.odoo.models.RpcServiceCall.ObjectService.{FieldName, Id, ModelName}
 import peschke.odoo.models.Template.{PickingNameTemplate, TimeOfDay}
 import peschke.odoo.models.Template.TimeOfDay.ScheduleAtOverrides
 import peschke.odoo.models._
 import peschke.odoo.models.authentication.{ApiKey, Database, ServerUri, Username}
+import peschke.odoo.utils.ArgumentHelpers
 
 import java.nio.file.InvalidPathException
 import scala.concurrent.duration.{DurationInt, FiniteDuration}
@@ -419,6 +421,40 @@ object ArgumentParser      {
       productFilterOpts
     ).mapN(TemplateFilters)
 
+  private val pickingOperationOpts: Opts[PickingCreator.PickingOperation] = {
+    val createOpts =
+      Opts
+        .flag("create", help = "Create the pickings (default)")
+        .as(PickingCreator.PickingOperation.Create)
+
+    implicit val skippableChecksArg: Argument[SkippableChecks] = ArgumentHelpers.enumArgument[SkippableChecks]
+
+    val viewPlanOpts =
+      Opts
+        .flag(
+          "view-plan",
+          help = """Do not create the pickings, print a summary of what would be created instead.
+                   |
+                   |Similar to what can be done with ODOO_DRY_RUN, but a bit easier to read.""".stripMargin
+        )
+        .as(PickingCreator.PickingOperation.PrintPlan)
+
+    val checksToSkipOpts =
+      Opts
+        .options[SkippableChecks](
+          long = "skip-check",
+          help = "Skip this check when generating the plan"
+        ).orEmpty
+
+    createOpts
+      .orElse {
+        (viewPlanOpts, checksToSkipOpts).mapN { (_, checks) =>
+          PickingCreator.PickingOperation.PrintPlan(checks.toSet)
+        }
+      }
+      .withDefault(PickingCreator.PickingOperation.Create)
+  }
+
   private val createPickingOpts: Opts[AppCommand.CreatePickings] =
     (
       Opts.option[Source]("template", help = "Template with pickings and moves"),
@@ -434,13 +470,7 @@ object ArgumentParser      {
         Opts.option[TimeOfDay.NightTime]("pm-time", help = "Time of day to schedule PM pickings").orNone
       ).tupled.map(ScheduleAtOverrides(_)),
       templateFilterOpts,
-      Opts
-        .flag(
-          "view-plan",
-          help = """Do not execute the pickings, print a report instead.
-                   |
-                   |Similar to what can be done with ODOO_DRY_RUN, but a bit easier to read.""".stripMargin
-        ).orFalse
+      pickingOperationOpts
     ).mapN(AppCommand.CreatePickings.apply)
 
   private val createPickingSubCmd: Opts[AppCommand] =

@@ -37,9 +37,7 @@ object CommandRunner      {
               .fromAction(action)
               .flatMap(JsonRpc[F].call)
               .flatMap(r => logger.info(show"Result: $r"))
-          case cp: AppCommand.CreatePickings     =>
-            if (cp.printReportInstead) PickingCreator[F].summarize(cp)
-            else PickingCreator[F].create(cp)
+          case cp: AppCommand.CreatePickings     => PickingCreator[F].run(cp)
           case AppCommand.ReloadKnownIds         =>
             KnownIdsBuilder[F]
               .build

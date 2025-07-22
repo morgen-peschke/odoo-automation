@@ -33,7 +33,7 @@ object LocationNameExpander      {
           mustache.execute(
             out,
             Map(
-              "timeOfDay" -> timeOfDay.shortName,
+              "timeOfDay" -> timeOfDay.regularName,
               "timeOfDayShort" -> timeOfDay.shortName,
               "timeOfDayFull" -> timeOfDay.fullName,
               "dayOfWeek" -> dayOfWeek.shortName,

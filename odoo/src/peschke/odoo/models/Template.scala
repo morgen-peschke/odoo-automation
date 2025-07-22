@@ -67,6 +67,7 @@ object Template {
   type ScheduledDate = ScheduledDate.Type
 
   sealed abstract class TimeOfDay(val shortName: String) extends enumeratum.EnumEntry       {
+    def regularName: String = shortName
     def fullName: String = entryName
 
     def unapply(raw: String): Boolean =
@@ -76,7 +77,9 @@ object Template {
   }
   object TimeOfDay                                       extends enumeratum.Enum[TimeOfDay] {
     case object Morning extends TimeOfDay("AM")
-    case object Noon    extends TimeOfDay("NN")
+    case object Noon    extends TimeOfDay("NN")  {
+      override def regularName: String = fullName
+    }
     case object Night   extends TimeOfDay("PM")
     case object AnyTime extends TimeOfDay("ANY") {
       override def entryName: String = "Any"

@@ -122,7 +122,7 @@ object PickingNameGenerator      {
             out,
             Map(
               "today" -> today.show,
-              "timeOfDay" -> timeOfDay.shortName,
+              "timeOfDay" -> timeOfDay.regularName,
               "timeOfDayShort" -> timeOfDay.shortName,
               "timeOfDayFull" -> timeOfDay.fullName,
               "index" -> index.show,

@@ -1,13 +1,16 @@
 package peschke.odoo.algebras
 
+import cats.MonadThrow
+import cats.Show
 import cats.syntax.all._
-import cats.{MonadThrow, Show}
-import com.github.mustachejava.{DefaultMustacheFactory, Mustache}
+import com.github.mustachejava.DefaultMustacheFactory
+import com.github.mustachejava.Mustache
 import org.typelevel.log4cats.LoggerFactory
 import peschke.odoo.models.DayOfWeek
 import peschke.odoo.models.Template.TimeOfDay
 
-import java.io.{StringReader, StringWriter}
+import java.io.StringReader
+import java.io.StringWriter
 import scala.jdk.CollectionConverters._
 
 trait LocationNameExpander[F[_]] {

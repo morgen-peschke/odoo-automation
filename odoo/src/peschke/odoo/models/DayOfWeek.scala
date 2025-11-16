@@ -1,7 +1,8 @@
 package peschke.odoo.models
 
 import cats.Order
-import cats.data.{NonEmptyList, NonEmptySet}
+import cats.data.NonEmptyList
+import cats.data.NonEmptySet
 import cats.syntax.all._
 import com.monovore.decline.Argument
 import io.circe.Decoder

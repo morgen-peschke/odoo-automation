@@ -1,14 +1,18 @@
 package peschke.odoo.models
 
 import cats.Order
-import cats.data.{NonEmptyList, NonEmptySet}
+import cats.data.NonEmptyList
+import cats.data.NonEmptySet
 import cats.syntax.all._
-import io.circe.{Decoder, Encoder}
+import io.circe.Decoder
+import io.circe.Encoder
 import peschke.odoo.models.Template.Entry
 import supertagged.NewType
 
-import java.time.format.{DateTimeFormatter, DateTimeParseException}
-import java.time.{LocalDateTime, LocalTime}
+import java.time.LocalDateTime
+import java.time.LocalTime
+import java.time.format.DateTimeFormatter
+import java.time.format.DateTimeParseException
 
 final case class Template(entries: NonEmptyList[Entry])
 object Template {

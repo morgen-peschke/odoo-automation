@@ -62,37 +62,34 @@ object DateOverride {
   }
   type Delta = Delta.Type
 
-  case object Today                                    extends DateOverride
+  case object Today extends DateOverride
 
-  final case class OnDate(date: AnyDayButToday)     extends DateOverride
-  final case class OnDaysAgo(delta: Delta)             extends DateOverride
-  final case class OnDaysHence(delta: Delta)           extends DateOverride
-  final case class OnLast(dayOfWeek: DayOfWeek)        extends DateOverride
-  final case class OnNext(dayOfWeek: DayOfWeek)        extends DateOverride
+  final case class OnDate(date: AnyDayButToday) extends DateOverride
+  final case class OnDaysAgo(delta: Delta)      extends DateOverride
+  final case class OnDaysHence(delta: Delta)    extends DateOverride
+  final case class OnLast(dayOfWeek: DayOfWeek) extends DateOverride
+  final case class OnNext(dayOfWeek: DayOfWeek) extends DateOverride
 
-  final case class SinceDate(date: DateInThePast)   extends DateOverride
-  final case class SinceDaysAgo(delta: Delta)          extends DateOverride
-  final case class SinceLast(dayOfWeek: DayOfWeek)     extends DateOverride
+  final case class SinceDate(date: DateInThePast)  extends DateOverride
+  final case class SinceDaysAgo(delta: Delta)      extends DateOverride
+  final case class SinceLast(dayOfWeek: DayOfWeek) extends DateOverride
 
   final case class UntilDate(date: DateInTheFuture) extends DateOverride
-  final case class UntilDaysHence(delta: Delta)        extends DateOverride
-  final case class UntilNext(dayOfWeek: DayOfWeek)     extends DateOverride
+  final case class UntilDaysHence(delta: Delta)     extends DateOverride
+  final case class UntilNext(dayOfWeek: DayOfWeek)  extends DateOverride
 
   implicit val decoder: Decoder[DateOverride] = anyOf[DateOverride](
     exactly("today").as(Today),
     exactly("yesterday").as(OnDaysAgo(Delta(1))),
     exactly("tomorrow").as(OnDaysAgo(Delta(1))),
-
     Decoder[AnyDayButToday].at("on:date").map(OnDate),
     Decoder[Delta].at("on:days-ago").map(OnDaysAgo),
     Decoder[Delta].at("on:days-hence").map(OnDaysHence),
     Decoder[DayOfWeek].at("on:last").map(OnLast),
     Decoder[DayOfWeek].at("on:next").map(OnNext),
-
     Decoder[DateInThePast].at("since:date").map(SinceDate),
     Decoder[Delta].at("since:days-ago").map(SinceDaysAgo),
     Decoder[DayOfWeek].at("since:last").map(SinceLast),
-
     Decoder[DateInTheFuture].at("until:date").map(UntilDate),
     Decoder[Delta].at("util:days-hence").map(UntilDaysHence),
     Decoder[DayOfWeek].at("until:next").map(UntilNext)
@@ -101,18 +98,18 @@ object DateOverride {
   implicit val order: Order[DateOverride] = Order.by {
     case Today => (0, 0, DayOfWeek.Monday)
 
-    case OnDate(date) => (1, AnyDayButToday.raw(date).getDayOfYear, DayOfWeek.Monday)
-    case OnDaysAgo(delta) => (2, Delta.raw(delta), DayOfWeek.Monday)
+    case OnDate(date)       => (1, AnyDayButToday.raw(date).getDayOfYear, DayOfWeek.Monday)
+    case OnDaysAgo(delta)   => (2, Delta.raw(delta), DayOfWeek.Monday)
     case OnDaysHence(delta) => (3, Delta.raw(delta), DayOfWeek.Monday)
-    case OnLast(dayOfWeek) => (4, 0, dayOfWeek)
-    case OnNext(dayOfWeek) => (5, 0, dayOfWeek)
+    case OnLast(dayOfWeek)  => (4, 0, dayOfWeek)
+    case OnNext(dayOfWeek)  => (5, 0, dayOfWeek)
 
-    case SinceDate(date) => (6, DateInThePast.raw(date).getDayOfYear, DayOfWeek.Monday)
-    case SinceDaysAgo(delta) => (7, Delta.raw(delta), DayOfWeek.Monday)
+    case SinceDate(date)      => (6, DateInThePast.raw(date).getDayOfYear, DayOfWeek.Monday)
+    case SinceDaysAgo(delta)  => (7, Delta.raw(delta), DayOfWeek.Monday)
     case SinceLast(dayOfWeek) => (8, 0, dayOfWeek)
 
-    case UntilDate(date) => (9, DateInTheFuture.raw(date).getDayOfYear, DayOfWeek.Monday)
+    case UntilDate(date)       => (9, DateInTheFuture.raw(date).getDayOfYear, DayOfWeek.Monday)
     case UntilDaysHence(delta) => (10, Delta.raw(delta), DayOfWeek.Monday)
-    case UntilNext(dayOfWeek) => (11, 0, dayOfWeek)
+    case UntilNext(dayOfWeek)  => (11, 0, dayOfWeek)
   }
 }

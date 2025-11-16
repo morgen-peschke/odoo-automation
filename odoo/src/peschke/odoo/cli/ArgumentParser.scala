@@ -1,28 +1,50 @@
 package peschke.odoo.cli
 
 import cats.Monad
-import cats.data.{NonEmptyList, NonEmptySet, Validated, ValidatedNel}
+import cats.data.NonEmptyList
+import cats.data.NonEmptySet
+import cats.data.Validated
+import cats.data.ValidatedNel
 import cats.syntax.all._
-import com.monovore.decline.{Argument, Command, Help, Opts}
+import com.monovore.decline.Argument
+import com.monovore.decline.Command
+import com.monovore.decline.Help
+import com.monovore.decline.Opts
 import fs2.io.file.Path
 import io.circe.Json
-import peschke.odoo.AppConfig.{AppCommand, AuthConfig, DryRun, LoginCache, Verbose}
-import peschke.odoo.{AppConfig, JsonLoader}
+import peschke.odoo.AppConfig
+import peschke.odoo.AppConfig.AppCommand
+import peschke.odoo.AppConfig.AuthConfig
+import peschke.odoo.AppConfig.DryRun
+import peschke.odoo.AppConfig.LoginCache
+import peschke.odoo.AppConfig.Verbose
+import peschke.odoo.JsonLoader
 import peschke.odoo.JsonLoader.Source
 import peschke.odoo.JsonLoader.Source.StdIn
+import peschke.odoo.algebras.PickingCreator
 import peschke.odoo.algebras.TemplateChecker.SkippableChecks
-import peschke.odoo.algebras.{PickingCreator, TextFilterParser}
-import peschke.odoo.models.Action.{Fields, Read, Search, Write}
-import peschke.odoo.models.RpcServiceCall.ObjectService.{FieldName, Id, ModelName}
-import peschke.odoo.models.Template.{PickingNameTemplate, TimeOfDay}
+import peschke.odoo.algebras.TextFilterParser
+import peschke.odoo.models.Action.Fields
+import peschke.odoo.models.Action.Read
+import peschke.odoo.models.Action.Search
+import peschke.odoo.models.Action.Write
+import peschke.odoo.models.RpcServiceCall.ObjectService.FieldName
+import peschke.odoo.models.RpcServiceCall.ObjectService.Id
+import peschke.odoo.models.RpcServiceCall.ObjectService.ModelName
+import peschke.odoo.models.Template.PickingNameTemplate
+import peschke.odoo.models.Template.TimeOfDay
 import peschke.odoo.models.Template.TimeOfDay.ScheduleAtOverrides
 import peschke.odoo.models._
-import peschke.odoo.models.authentication.{ApiKey, Database, ServerUri, Username}
+import peschke.odoo.models.authentication.ApiKey
+import peschke.odoo.models.authentication.Database
+import peschke.odoo.models.authentication.ServerUri
+import peschke.odoo.models.authentication.Username
 import peschke.odoo.utils.ArgumentHelpers
 import peschke.odoo.utils.Circe.circeJsonArgument
 
 import java.nio.file.InvalidPathException
-import scala.concurrent.duration.{DurationInt, FiniteDuration}
+import scala.concurrent.duration.DurationInt
+import scala.concurrent.duration.FiniteDuration
 import scala.util.matching.Regex
 
 trait ArgumentParser[F[_]] {
@@ -271,24 +293,27 @@ object ArgumentParser      {
 
     val sinceOpts: Opts[List[DateOverride]] = {
       val argument: Argument[DateOverride] = ArgumentHelpers.oneOf(
-        ArgumentHelpers.pairArgument(none, ":", none)(
-          ArgumentHelpers.const("date"),
-          Argument[DateOverride.DateInThePast]
-        ).map {
-          case (_, date) => DateOverride.SinceDate(date)
-        },
-        ArgumentHelpers.pairArgument(none, ":", none)(
-          ArgumentHelpers.const("days-ago"),
-          Argument[DateOverride.Delta]
-        ).map {
-          case (_, delta) => DateOverride.SinceDaysAgo(delta)
-        },
-        ArgumentHelpers.pairArgument(none, ":", none)(
-          ArgumentHelpers.const("last"),
-          Argument[DayOfWeek]
-        ).map {
-          case (_, day) => DateOverride.SinceLast(day)
-        }
+        ArgumentHelpers
+          .pairArgument(none, ":", none)(
+            ArgumentHelpers.const("date"),
+            Argument[DateOverride.DateInThePast]
+          ).map { case (_, date) =>
+            DateOverride.SinceDate(date)
+          },
+        ArgumentHelpers
+          .pairArgument(none, ":", none)(
+            ArgumentHelpers.const("days-ago"),
+            Argument[DateOverride.Delta]
+          ).map { case (_, delta) =>
+            DateOverride.SinceDaysAgo(delta)
+          },
+        ArgumentHelpers
+          .pairArgument(none, ":", none)(
+            ArgumentHelpers.const("last"),
+            Argument[DayOfWeek]
+          ).map { case (_, day) =>
+            DateOverride.SinceLast(day)
+          }
       )
 
       Opts
@@ -299,24 +324,27 @@ object ArgumentParser      {
 
     val untilOpts: Opts[List[DateOverride]] = {
       val argument: Argument[DateOverride] = ArgumentHelpers.oneOf(
-        ArgumentHelpers.pairArgument(none, ":", none)(
-          ArgumentHelpers.const("date"),
-          Argument[DateOverride.DateInTheFuture]
-        ).map {
-          case (_, date) => DateOverride.UntilDate(date)
-        },
-        ArgumentHelpers.pairArgument(none, ":", none)(
-          ArgumentHelpers.const("days-hence"),
-          Argument[DateOverride.Delta]
-        ).map {
-          case (_, delta) => DateOverride.UntilDaysHence(delta)
-        },
-        ArgumentHelpers.pairArgument(none, ":", none)(
-          ArgumentHelpers.const("next"),
-          Argument[DayOfWeek]
-        ).map {
-          case (_, day) => DateOverride.UntilNext(day)
-        }
+        ArgumentHelpers
+          .pairArgument(none, ":", none)(
+            ArgumentHelpers.const("date"),
+            Argument[DateOverride.DateInTheFuture]
+          ).map { case (_, date) =>
+            DateOverride.UntilDate(date)
+          },
+        ArgumentHelpers
+          .pairArgument(none, ":", none)(
+            ArgumentHelpers.const("days-hence"),
+            Argument[DateOverride.Delta]
+          ).map { case (_, delta) =>
+            DateOverride.UntilDaysHence(delta)
+          },
+        ArgumentHelpers
+          .pairArgument(none, ":", none)(
+            ArgumentHelpers.const("next"),
+            Argument[DayOfWeek]
+          ).map { case (_, day) =>
+            DateOverride.UntilNext(day)
+          }
       )
 
       Opts

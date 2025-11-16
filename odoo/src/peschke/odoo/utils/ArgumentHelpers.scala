@@ -1,7 +1,8 @@
 package peschke.odoo.utils
 
 import cats.Show
-import cats.data.{Chain, NonEmptyChain}
+import cats.data.Chain
+import cats.data.NonEmptyChain
 import cats.syntax.all._
 import com.monovore.decline.Argument
 
@@ -19,8 +20,8 @@ object ArgumentHelpers {
 
   val boolean: Argument[Boolean] = Argument.from("t|f")(_.toLowerCase.trim match {
     case "0" | "f" | "off" | "false" => false.valid
-    case "1" | "t" | "on" | "true" => true.valid
-    case _ => "Expected one of 'true' (or 't', '1', or 'on') or 'false' (or 'f', '0', or 'off'".invalidNel
+    case "1" | "t" | "on" | "true"   => true.valid
+    case _                           => "Expected one of 'true' (or 't', '1', or 'on') or 'false' (or 'f', '0', or 'off'".invalidNel
   })
 
   def oneOf[A](arg0: Argument[A], argN: Argument[A]*): Argument[A] =
@@ -33,7 +34,10 @@ object ArgumentHelpers {
     }
   }
 
-  def pairArgument[A, B](metavarAOverride: Option[String], delimiter: String, metavarBOverride: Option[String])(implicit argA: Argument[A], argB: Argument[B]): Argument[(A, B)] = {
+  def pairArgument[A, B]
+    (metavarAOverride: Option[String], delimiter: String, metavarBOverride: Option[String])
+    (implicit argA:    Argument[A], argB:         Argument[B])
+    : Argument[(A, B)] = {
     val mva = {
       val m = metavarAOverride.getOrElse(argA.defaultMetavar)
       if (m.startsWith("'") && m.endsWith("'")) m

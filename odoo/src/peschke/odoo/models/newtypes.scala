@@ -9,7 +9,8 @@ import io.circe.Encoder
 import io.circe.KeyDecoder
 import io.circe.KeyEncoder
 
-import java.time.{LocalDate, LocalTime}
+import java.time.LocalDate
+import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import java.time.format.DateTimeParseException
 

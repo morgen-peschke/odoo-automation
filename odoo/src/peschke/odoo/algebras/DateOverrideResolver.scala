@@ -55,7 +55,7 @@ object DateOverrideResolver      {
               new IllegalStateException(s"Unable to calculate dates until $target")
             })
 
-        case DateOverride.OnDaysAgo(delta)    =>
+        case DateOverride.OnDaysAgo(delta) =>
           todayF.map(_.minusDays(DateOverride.Delta.raw(delta).toLong).pure[NonEmptyList])
 
         case DateOverride.OnDaysHence(delta) =>
@@ -88,7 +88,6 @@ object DateOverrideResolver      {
             .flatMap(NonEmptyList.fromList(_).liftTo[F] {
               new IllegalStateException(s"Unable to calculate the next $target dates")
             })
-
 
         case DateOverride.OnLast(target) =>
           todayF

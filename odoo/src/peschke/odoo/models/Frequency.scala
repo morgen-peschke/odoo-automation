@@ -1,6 +1,7 @@
 package peschke.odoo.models
 
-import cats.data.{NonEmptyList, NonEmptySet}
+import cats.data.NonEmptyList
+import cats.data.NonEmptySet
 import cats.syntax.all._
 import io.circe.Decoder
 import peschke.odoo.utils.Circe._
@@ -12,12 +13,12 @@ sealed trait Frequency {
   def includes(day: LocalDate): Boolean
 }
 object Frequency       {
-  case object Daily                                            extends Frequency {
+  case object Daily                                     extends Frequency {
     override def expanded: NonEmptyList[DayOfWeek] = DayOfWeek.valuesNel
 
     override def includes(day: LocalDate): Boolean = true
   }
-  final case class Weekly(days: NonEmptySet[DayOfWeek])        extends Frequency {
+  final case class Weekly(days: NonEmptySet[DayOfWeek]) extends Frequency {
     override def expanded: NonEmptyList[DayOfWeek] = days.toNonEmptyList.sortBy(_.index)
 
     override def includes(day: LocalDate): Boolean = days.contains(DayOfWeek.ofDay(day))

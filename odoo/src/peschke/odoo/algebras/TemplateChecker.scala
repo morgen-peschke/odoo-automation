@@ -1,23 +1,34 @@
 package peschke.odoo.algebras
 
-import cats.data.{NonEmptyList, NonEmptySet}
+import cats.Monad
+import cats.MonadThrow
+import cats.Order
+import cats.data.NonEmptyList
+import cats.data.NonEmptySet
 import cats.effect.kernel.Clock
 import cats.syntax.all._
-import cats.{Monad, MonadThrow, Order}
 import io.circe.Decoder
 import org.typelevel.log4cats.LoggerFactory
-import peschke.odoo.algebras.PickingNameGenerator.{EntryIndex, PickingIndex}
+import peschke.odoo.algebras.PickingNameGenerator.EntryIndex
+import peschke.odoo.algebras.PickingNameGenerator.PickingIndex
 import peschke.odoo.algebras.TemplateChecker.QuantityOnHand.CurrentQuantity
 import peschke.odoo.algebras.TemplateChecker.SkippableChecks
 import peschke.odoo.algebras.TemplateChecker.SkippableChecks.DisabledFlag
 import peschke.odoo.models.Action.Search.Condition.syntax._
-import peschke.odoo.models.RpcServiceCall.ObjectService.{FieldName, ModelName}
-import peschke.odoo.models.Template.TimeOfDay.{ScheduleAt, ScheduleAtOverrides}
+import peschke.odoo.models.RpcServiceCall.ObjectService.FieldName
+import peschke.odoo.models.RpcServiceCall.ObjectService.ModelName
+import peschke.odoo.models.Template.TimeOfDay.ScheduleAt
+import peschke.odoo.models.Template.TimeOfDay.ScheduleAtOverrides
 import peschke.odoo.models.Template._
 import peschke.odoo.models._
 import peschke.odoo.utils.Circe._
 
-import java.time.{DayOfWeek => _, LocalDate, LocalDateTime, LocalTime, ZoneId, ZonedDateTime}
+import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.LocalTime
+import java.time.ZoneId
+import java.time.ZonedDateTime
+import java.time.{DayOfWeek => _}
 
 trait TemplateChecker[F[_]] {
   def check
@@ -70,7 +81,16 @@ object TemplateChecker      {
         template
           .entries.toList
           .traverseWithIndexM { (entry, index) =>
-            checkEntry(entry, today, times, EntryIndex.fromInt(index, maxWidth), scheduleAt, checkTimestamp, filters, checksToSkip)
+            checkEntry(
+              entry,
+              today,
+              times,
+              EntryIndex.fromInt(index, maxWidth),
+              scheduleAt,
+              checkTimestamp,
+              filters,
+              checksToSkip
+            )
           }
           .map(_.flatten)
           .map(NonEmptyList.fromList(_).map(CheckedTemplate(_)))

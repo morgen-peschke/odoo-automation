@@ -5,8 +5,18 @@ import cats.data.NonEmptyList
 import cats.syntax.all._
 import org.typelevel.log4cats.LoggerFactory
 import peschke.odoo.models.CheckedTemplate.PickingName
-import peschke.odoo.models.Template.{Entry, EntryLabel, Location, LocationDest, MoveName, MoveTemplate, PickingNameTemplate, PickingTemplate, Tag}
-import peschke.odoo.models.{TagFilter, Template, TemplateFilters}
+import peschke.odoo.models.TagFilter
+import peschke.odoo.models.Template
+import peschke.odoo.models.Template.Entry
+import peschke.odoo.models.Template.EntryLabel
+import peschke.odoo.models.Template.Location
+import peschke.odoo.models.Template.LocationDest
+import peschke.odoo.models.Template.MoveName
+import peschke.odoo.models.Template.MoveTemplate
+import peschke.odoo.models.Template.PickingNameTemplate
+import peschke.odoo.models.Template.PickingTemplate
+import peschke.odoo.models.Template.Tag
+import peschke.odoo.models.TemplateFilters
 
 trait TemplateFilterer[F[_]] {
   def keepEntry(entry: Entry, filters: TemplateFilters): F[Boolean]

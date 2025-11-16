@@ -9,7 +9,8 @@ import org.typelevel.log4cats.LoggerFactory
 import peschke.odoo.AppConfig.AppCommand.CreatePickings
 import peschke.odoo.algebras.TemplateChecker.SkippableChecks
 import peschke.odoo.models.CheckedTemplate._
-import peschke.odoo.models.RpcServiceCall.ObjectService.{FieldName, ModelName}
+import peschke.odoo.models.RpcServiceCall.ObjectService.FieldName
+import peschke.odoo.models.RpcServiceCall.ObjectService.ModelName
 import peschke.odoo.models._
 
 trait PickingCreator[F[_]] {

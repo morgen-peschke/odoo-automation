@@ -1,18 +1,26 @@
 package peschke.odoo.algebras
 
+import cats.MonadThrow
+import cats.Show
 import cats.syntax.all._
-import cats.{MonadThrow, Show}
-import com.github.mustachejava.{DefaultMustacheFactory, Mustache}
+import com.github.mustachejava.DefaultMustacheFactory
+import com.github.mustachejava.Mustache
 import org.typelevel.log4cats.LoggerFactory
-import peschke.odoo.algebras.PickingNameGenerator.{EntryIndex, PickingIndex}
+import peschke.odoo.algebras.PickingNameGenerator.EntryIndex
+import peschke.odoo.algebras.PickingNameGenerator.PickingIndex
 import peschke.odoo.models.CheckedTemplate.PickingName
 import peschke.odoo.models.DayOfWeek
-import peschke.odoo.models.Template.{PickingNameTemplate, PickingTemplate, TimeOfDay}
+import peschke.odoo.models.Template.PickingNameTemplate
+import peschke.odoo.models.Template.PickingTemplate
+import peschke.odoo.models.Template.TimeOfDay
 
-import java.io.{StringReader, StringWriter}
-import java.time.format.{DateTimeFormatter, DateTimeFormatterBuilder}
+import java.io.StringReader
+import java.io.StringWriter
+import java.time.LocalDate
+import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
+import java.time.format.DateTimeFormatterBuilder
 import java.time.temporal.ChronoField
-import java.time.{LocalDate, ZonedDateTime}
 import scala.jdk.CollectionConverters._
 
 trait PickingNameGenerator[F[_]] {
@@ -115,7 +123,7 @@ object PickingNameGenerator      {
          dayOfWeek: DayOfWeek,
          timeOfDay: TimeOfDay,
          index:     IndexStr,
-         timestamp: ZonedDateTime,
+         timestamp: ZonedDateTime
         )
         : F[String] =
         MonadThrow[F].catchNonFatal {
@@ -146,7 +154,7 @@ object PickingNameGenerator      {
       override def generate
         (picking: PickingTemplate, today: LocalDate, rawIndex: (EntryIndex, PickingIndex), timestamp: ZonedDateTime)
         : F[PickingName] = {
-        val index = IndexStr(rawIndex._1,rawIndex._2)
+        val index = IndexStr(rawIndex._1, rawIndex._2)
         def fallBackToSimpleName: PickingName =
           PickingName(show"MOVE/$today/${index.padded}/${picking.timeOfDay.shortName}")
 

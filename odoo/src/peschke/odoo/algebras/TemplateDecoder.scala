@@ -3,7 +3,9 @@ package peschke.odoo.algebras
 import cats.MonadThrow
 import cats.data.NonEmptyList
 import cats.syntax.all._
-import io.circe.{ACursor, Decoder, DecodingFailure}
+import io.circe.ACursor
+import io.circe.Decoder
+import io.circe.DecodingFailure
 import peschke.odoo.JsonLoader
 import peschke.odoo.models.Template._
 import peschke.odoo.models._

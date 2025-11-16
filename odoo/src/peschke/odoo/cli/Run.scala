@@ -16,7 +16,20 @@ import peschke.odoo.AppConfig
 import peschke.odoo.AppConfig.DryRun
 import peschke.odoo.AppConfig.Verbose
 import peschke.odoo.JsonLoader
-import peschke.odoo.algebras.{CommandRunner, DateOverrideResolver, Generator, JsonRpc, KnownIdsBuilder, LocationNameExpander, LoginManager, PickingCreator, PickingNameGenerator, RequestBuilder, ServiceCallBuilder, TemplateChecker, TemplateDecoder, TemplateFilterer}
+import peschke.odoo.algebras.CommandRunner
+import peschke.odoo.algebras.DateOverrideResolver
+import peschke.odoo.algebras.Generator
+import peschke.odoo.algebras.JsonRpc
+import peschke.odoo.algebras.KnownIdsBuilder
+import peschke.odoo.algebras.LocationNameExpander
+import peschke.odoo.algebras.LoginManager
+import peschke.odoo.algebras.PickingCreator
+import peschke.odoo.algebras.PickingNameGenerator
+import peschke.odoo.algebras.RequestBuilder
+import peschke.odoo.algebras.ServiceCallBuilder
+import peschke.odoo.algebras.TemplateChecker
+import peschke.odoo.algebras.TemplateDecoder
+import peschke.odoo.algebras.TemplateFilterer
 import peschke.odoo.models.RpcServiceCall.CommonService
 import peschke.odoo.models.RpcServiceCall.ObjectService
 import upperbound.Limiter

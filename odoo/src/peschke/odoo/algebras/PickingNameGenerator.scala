@@ -1,28 +1,18 @@
 package peschke.odoo.algebras
 
-import cats.MonadThrow
-import cats.Show
 import cats.syntax.all._
-import com.github.mustachejava.DefaultMustacheFactory
-import com.github.mustachejava.Mustache
+import cats.{MonadThrow, Show}
+import com.github.mustachejava.{DefaultMustacheFactory, Mustache}
 import org.typelevel.log4cats.LoggerFactory
-import peschke.odoo.algebras.PickingNameGenerator.EntryIndex
-import peschke.odoo.algebras.PickingNameGenerator.PickingIndex
+import peschke.odoo.algebras.PickingNameGenerator.{EntryIndex, PickingIndex}
 import peschke.odoo.models.CheckedTemplate.PickingName
 import peschke.odoo.models.DayOfWeek
-import peschke.odoo.models.NewString
-import peschke.odoo.models.PosInt
-import peschke.odoo.models.Template.PickingNameTemplate
-import peschke.odoo.models.Template.PickingTemplate
-import peschke.odoo.models.Template.TimeOfDay
+import peschke.odoo.models.Template.{PickingNameTemplate, PickingTemplate, TimeOfDay}
 
-import java.io.StringReader
-import java.io.StringWriter
-import java.time.LocalDate
-import java.time.ZonedDateTime
-import java.time.format.DateTimeFormatter
-import java.time.format.DateTimeFormatterBuilder
+import java.io.{StringReader, StringWriter}
+import java.time.format.{DateTimeFormatter, DateTimeFormatterBuilder}
 import java.time.temporal.ChronoField
+import java.time.{LocalDate, ZonedDateTime}
 import scala.jdk.CollectionConverters._
 
 trait PickingNameGenerator[F[_]] {
@@ -33,16 +23,28 @@ trait PickingNameGenerator[F[_]] {
 object PickingNameGenerator      {
   def apply[F[_]](implicit PNG: PickingNameGenerator[F]): PNG.type = PNG
 
-  object EntryIndex extends PosInt("entry index")
-  type EntryIndex = EntryIndex.Type
-
-  object PickingIndex extends PosInt("picking index")
-  type PickingIndex = PickingIndex.Type
-
-  object IndexStr extends NewString {
-    override def fromString(raw: String): Either[String, Type] = apply(raw).asRight
+  final case class EntryIndex(value: String, padded: String)
+  object EntryIndex {
+    def fromInt(i: Int, width: Int): EntryIndex = {
+      val value = s"$i"
+      val padding = "0" * (width - value.length)
+      apply(value, s"$padding$value")
+    }
   }
-  type IndexStr = IndexStr.Type
+
+  final case class PickingIndex(value: String, padded: String)
+  object PickingIndex {
+    def fromInt(i: Int, width: Int): PickingIndex = {
+      val value = s"$i"
+      val padding = "0" * (width - value.length)
+      apply(value, s"$padding$value")
+    }
+  }
+
+  final case class IndexStr(entryIndex: EntryIndex, pickingIndex: PickingIndex) {
+    def value: String = s"${entryIndex.value}.${pickingIndex.value}"
+    def padded: String = s"${entryIndex.padded}.${pickingIndex.padded}"
+  }
 
   def default[F[_]: MonadThrow: LoggerFactory]
     (globalNamePrefixOpt: Option[PickingNameTemplate], globalNameSuffixOpt: Option[PickingNameTemplate])
@@ -103,7 +105,7 @@ object PickingNameGenerator      {
           .catchNonFatal {
             mf.compile(
               new StringReader(s"$namePrefix${PickingNameTemplate.raw(picking.pickingName)}$nameSuffix"),
-              show"${picking.pickingName}/$index"
+              show"${picking.pickingName}/${index.value}"
             )
           }
 
@@ -113,7 +115,7 @@ object PickingNameGenerator      {
          dayOfWeek: DayOfWeek,
          timeOfDay: TimeOfDay,
          index:     IndexStr,
-         timestamp: ZonedDateTime
+         timestamp: ZonedDateTime,
         )
         : F[String] =
         MonadThrow[F].catchNonFatal {
@@ -125,7 +127,8 @@ object PickingNameGenerator      {
               "timeOfDay" -> timeOfDay.regularName,
               "timeOfDayShort" -> timeOfDay.shortName,
               "timeOfDayFull" -> timeOfDay.fullName,
-              "index" -> index.show,
+              "index:pad" -> index.padded,
+              "index" -> index.value,
               "dayOfWeek" -> dayOfWeek.shortName,
               "dayOfWeekShort" -> dayOfWeek.shortName,
               "dayOfWeekFull" -> dayOfWeek.fullName,
@@ -143,9 +146,9 @@ object PickingNameGenerator      {
       override def generate
         (picking: PickingTemplate, today: LocalDate, rawIndex: (EntryIndex, PickingIndex), timestamp: ZonedDateTime)
         : F[PickingName] = {
-        val index = IndexStr(s"${rawIndex._1}.${rawIndex._2}")
-
-        def fallBackToSimpleName: PickingName = PickingName(show"MOVE/$today/$index/${picking.timeOfDay.shortName}")
+        val index = IndexStr(rawIndex._1,rawIndex._2)
+        def fallBackToSimpleName: PickingName =
+          PickingName(show"MOVE/$today/${index.padded}/${picking.timeOfDay.shortName}")
 
         buildMustache(picking, index).redeemWith(
           ex => {

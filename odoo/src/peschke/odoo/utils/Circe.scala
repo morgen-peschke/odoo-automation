@@ -6,6 +6,7 @@ import cats.data.Chain
 import cats.data.NonEmptyChain
 import cats.data.Validated
 import cats.syntax.all._
+import com.monovore.decline.Argument
 import io.circe.Decoder.AccumulatingResult
 import io.circe.Decoder.Result
 import io.circe._
@@ -18,11 +19,12 @@ object Circe {
     override def decodeAccumulating(c: HCursor): AccumulatingResult[A] = f(c)
   }
 
-  def fixed[A: Eq: Decoder: Encoder](sentinel: A): Decoder[Unit] = {
-    val errorMessage = s"Expected ${Encoder[A].apply(sentinel).printWith(Printer.noSpaces)}"
+  def exactly[A: Eq: Decoder: Encoder](sentinel: A): Decoder[Unit] = {
+    def pretty(a: A): String = Encoder[A].apply(a).printWith(Printer.noSpaces)
+    val errorMessage = s"Expected ${pretty(sentinel)}"
     accumulatingDecoder { c =>
       c.asAcc[A].andThen { value =>
-        Validated.condNel(value === sentinel, (), DecodingFailure(errorMessage, c.history))
+        Validated.condNel(value === sentinel, (), DecodingFailure(s"$errorMessage but was ${pretty(value)}", c.history))
       }
     }
   }
@@ -50,9 +52,7 @@ object Circe {
           tryDecodeAccumulating(c)
 
         override def tryDecodeAccumulating(c: ACursor): AccumulatingResult[A] =
-          lhs.tryDecodeAccumulating(c).recoverWith { case lhsFailure =>
-            rhs.tryDecodeAccumulating(c).leftMap(lhsFailure.concatNel)
-          }
+          lhs.tryDecodeAccumulating(c).findValid(rhs.tryDecodeAccumulating(c))
       }
     }
 
@@ -65,4 +65,8 @@ object Circe {
 
   implicit val ciStringDecoder: Decoder[CIString] = Decoder[String].map(CIString(_))
   implicit val ciStringEncoder: Encoder[CIString] = Encoder[String].contramap(_.toString)
+
+  implicit val circeJsonArgument: Argument[Json] = Argument.from("JSON") { raw =>
+    io.circe.parser.parse(raw).leftMap(_.message).toValidatedNel
+  }
 }

@@ -60,7 +60,7 @@ object TemplateDecoder      {
     )
 
     private implicit val quantityTypeDecoder: Decoder[QuantityType] = anyOf[QuantityType](
-      fixed[String]("all").as(QuantityType.All),
+      exactly[String]("all").as(QuantityType.All),
       Decoder[ProductQuantity].map(QuantityType.Add),
       Decoder[ProductQuantity].at("refill-to").map(QuantityType.Fill)
     )
@@ -81,7 +81,7 @@ object TemplateDecoder      {
     private def mkMoveTemplateSetDecoder(implicit mtd: Decoder[MoveTemplate]): Decoder[MoveTemplateSet] = {
       anyOf[MoveTemplateSet](
         Decoder[NonEmptyList[MoveTemplate]].map(MoveTemplateSet.Explicit),
-        fixed[String]("all").as(MoveTemplateSet.All)
+        exactly[String]("all").as(MoveTemplateSet.All)
       )
     }
 
@@ -131,7 +131,7 @@ object TemplateDecoder      {
                 (locationIdF, locationDestIdF).mapN { (locationId, locationDestId) =>
                   PickingTemplate(
                     dow,
-                    Option.unless(frequency.isMocked)(dow),
+                    frequency,
                     tod,
                     pickingName,
                     moveType,

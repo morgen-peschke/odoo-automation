@@ -65,14 +65,16 @@ object TemplateChecker      {
          filters:        TemplateFilters,
          checksToSkip:   Set[SkippableChecks]
         )
-        : F[Option[CheckedTemplate]] =
+        : F[Option[CheckedTemplate]] = {
+        val maxWidth = template.entries.toList.indices.last.toString.length
         template
           .entries.toList
           .traverseWithIndexM { (entry, index) =>
-            checkEntry(entry, today, times, EntryIndex(index), scheduleAt, checkTimestamp, filters, checksToSkip)
+            checkEntry(entry, today, times, EntryIndex.fromInt(index, maxWidth), scheduleAt, checkTimestamp, filters, checksToSkip)
           }
           .map(_.flatten)
           .map(NonEmptyList.fromList(_).map(CheckedTemplate(_)))
+      }
 
       private def checkEntry
         (entry:          Template.Entry,
@@ -88,26 +90,29 @@ object TemplateChecker      {
         logger.info(show"Checking entries for ${entry.label}") >>
           Monad[F].ifM(TemplateFilterer[F].keepEntry(entry, filters))(
             ifFalse = none[CheckedTemplate.Entry].pure[F],
-            ifTrue = entry
-              .pickings
-              .toList
-              .traverseWithIndexM { (template, pickingIndex) =>
-                checkPicking(
-                  template,
-                  today,
-                  times,
-                  entryIndex -> PickingIndex(pickingIndex),
-                  scheduleAt,
-                  checkTimestamp,
-                  filters,
-                  checksToSkip
-                )
-              }
-              .map(_.flatten)
-              .flatMap(NonEmptyList.fromList(_) match {
-                case None           => logger.info(s"Skipping ${entry.label}, no pickings need to be created").as(none)
-                case Some(pickings) => CheckedTemplate.Entry(entry.label, pickings).some.pure[F]
-              })
+            ifTrue = {
+              val maxWidth = entry.pickings.toList.indices.last.toString.length
+              entry
+                .pickings
+                .toList
+                .traverseWithIndexM { (template, pickingIndex) =>
+                  checkPicking(
+                    template,
+                    today,
+                    times,
+                    entryIndex -> PickingIndex.fromInt(pickingIndex, maxWidth),
+                    scheduleAt,
+                    checkTimestamp,
+                    filters,
+                    checksToSkip
+                  )
+                }
+                .map(_.flatten)
+                .flatMap(NonEmptyList.fromList(_) match {
+                  case None           => logger.info(s"Skipping ${entry.label}, no pickings need to be created").as(none)
+                  case Some(pickings) => CheckedTemplate.Entry(entry.label, pickings).some.pure[F]
+                })
+            }
           )
 
       private def checkPicking
@@ -128,11 +133,7 @@ object TemplateChecker      {
               logger.info(show"Skipping $name because it is disabled").as(none)
             else
               TemplateFilterer[F].keepPicking(picking, name, filters).flatMap { passedFilterChecks =>
-                val shouldSkipBecauseOfDate = picking.restrictedToDayOfWeek match {
-                  case None            => false
-                  case Some(dayOfWeek) => dayOfWeek =!= DayOfWeek.ofDay(today)
-                }
-
+                val shouldSkipBecauseOfDate = !picking.frequency.includes(today)
                 val shouldSkipBecauseOfTime = !times.contains(picking.timeOfDay)
                 if (!passedFilterChecks) none[CheckedTemplate.PickingTemplate].pure[F]
                 else if (shouldSkipBecauseOfDate)

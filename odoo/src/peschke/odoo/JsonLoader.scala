@@ -24,7 +24,7 @@ object JsonLoader      {
     final case class RawJson(raw: String) extends Source
 
     implicit val decoder: Decoder[Source] = anyOf[Source](
-      fixed("stdin").as(StdIn),
+      exactly("stdin").as(StdIn),
       Decoder[String].at("file").emapTry(raw => Try(Path(raw)).map(JsonFile)),
       Decoder[String].at("json").map(RawJson)
     )

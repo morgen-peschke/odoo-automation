@@ -1,6 +1,8 @@
 package peschke.odoo.models
 
 import cats.data.NonEmptyList
+import cats.syntax.all._
+import com.monovore.decline.Argument
 import io.circe.Json
 import io.circe.syntax._
 import peschke.odoo.models.Action.Fields.Attribute
@@ -73,7 +75,9 @@ object RpcServiceCall       {
     object Id extends PosInt("Id")
     type Id = Id.Type
 
-    object FieldName extends NonEmptyString("Field name")
+    object FieldName extends NonEmptyString("Field name") {
+      override implicit val argument: Argument[Type] = Argument.from("field")(fromString(_).toValidatedNel)
+    }
 
     type FieldName = FieldName.Type
 

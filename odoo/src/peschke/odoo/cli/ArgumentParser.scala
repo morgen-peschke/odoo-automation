@@ -19,6 +19,7 @@ import peschke.odoo.models.Template.TimeOfDay.ScheduleAtOverrides
 import peschke.odoo.models._
 import peschke.odoo.models.authentication.{ApiKey, Database, ServerUri, Username}
 import peschke.odoo.utils.ArgumentHelpers
+import peschke.odoo.utils.Circe.circeJsonArgument
 
 import java.nio.file.InvalidPathException
 import scala.concurrent.duration.{DurationInt, FiniteDuration}
@@ -150,21 +151,13 @@ object ArgumentParser      {
       ).mapN(Search.apply)
     }
 
-  implicit val parameterArgument: Argument[(FieldName, Json)] = Argument.from("<field>=<json>") { raw =>
-    raw.split('=').toList match {
-      case key :: v0 :: vN =>
-        (
-          FieldName.fromString(key).toValidatedNel,
-          io.circe.parser.parse((v0 :: vN).mkString("=")).leftMap(_.message).toValidatedNel
-        ).tupled
-      case _               => "Expected <field>=<json>".invalidNel
-    }
-  }
+  implicit val parameterArgument: Argument[(FieldName, Json)] =
+    ArgumentHelpers.pairArgument[FieldName, Json](none, "=", none)
 
   private def csvOpt[A]
     (entryFormat: String, metaVar: String, parser: String => ValidatedNel[String, A])
     : Argument[NonEmptyList[A]] =
-    Argument.from(s"${metaVar}0,${metaVar}1,...${metaVar}N $metaVar:$entryFormat") { raw =>
+    Argument.from(s"${metaVar}0,${metaVar}1,...${metaVar}N where $metaVar:$entryFormat") { raw =>
       NonEmptyList
         .fromList(raw.split(',').toList)
         .toValidNel("Expected non-empty list of comma-separated entries")
@@ -184,9 +177,6 @@ object ArgumentParser      {
     val entryNames = DayOfWeek.values.map(t => t.fullName).mkString("unique prefix of \"", "\", \"", "\"")
     csvArgument[DayOfWeek](entryNames, "dayOfWeek")
   }
-
-//  implicit val intList: Argument[NonEmptyList[Int]] =
-//    csvOpt("[0-9]", "i", s => s.toIntOption.filter(_ >= 0).toValidNel(s"$s is not a positive integer"))
 
   private val readOpts: Opts[Action] =
     Opts.subcommand("read", help = "Read a record") {
@@ -231,8 +221,8 @@ object ArgumentParser      {
     }
 
   private val dateOverridesOpt: Opts[Option[NonEmptySet[DateOverride]]] = {
-    implicit val dateList: Argument[NonEmptyList[DateOverride.DateInThePast]] =
-      csvArgument[DateOverride.DateInThePast](NewLocalDate.pattern, "date")
+    implicit val notTodayDateList: Argument[NonEmptyList[DateOverride.AnyDayButToday]] =
+      csvArgument[DateOverride.AnyDayButToday](NewLocalDate.pattern, "date")
 
     implicit val deltaList: Argument[NonEmptyList[DateOverride.Delta]] = csvArgument[DateOverride.Delta]("[0-9]", "i")
 
@@ -248,57 +238,100 @@ object ArgumentParser      {
         .as(DateOverride.OnDaysAgo(DateOverride.Delta(1)).pure[NonEmptyList])
         .orEmpty
 
-    val onExactly: Opts[List[DateOverride]] =
+    val tomorrow: Opts[List[DateOverride]] =
       Opts
-        .options[NonEmptyList[DateOverride.DateInThePast]]("on:date", help = "Create pickings for these dates")
-        .map(_.flatten.map(DateOverride.OnExactly))
+        .flag("tomorrow", help = "Create pickings for tomorrow")
+        .as(DateOverride.OnDaysHence(DateOverride.Delta(1)).pure[NonEmptyList])
         .orEmpty
 
-    val sinceExactly: Opts[List[DateOverride]] =
-      Opts
-        .options[DateOverride.DateInThePast]("since:date", help = "Create pickings from this date until yesterday")
-        .map(_.map(DateOverride.SinceExactly))
-        .orEmpty
+    val onOpts: Opts[List[DateOverride]] = {
+      val argument: Argument[NonEmptyList[DateOverride]] = ArgumentHelpers.oneOf(
+        ArgumentHelpers.pairArgument(none, ":", none)(ArgumentHelpers.const("date"), notTodayDateList).map {
+          case (_, dates) => dates.map(DateOverride.OnDate)
+        },
+        ArgumentHelpers.pairArgument(none, ":", none)(ArgumentHelpers.const("days-ago"), deltaList).map {
+          case (_, deltas) => deltas.map(DateOverride.OnDaysAgo)
+        },
+        ArgumentHelpers.pairArgument(none, ":", none)(ArgumentHelpers.const("days-hence"), deltaList).map {
+          case (_, deltas) => deltas.map(DateOverride.OnDaysHence)
+        },
+        ArgumentHelpers.pairArgument(none, ":", none)(ArgumentHelpers.const("last"), dayOfWeekArgument).map {
+          case (_, days) => days.map(DateOverride.OnLast)
+        },
+        ArgumentHelpers.pairArgument(none, ":", none)(ArgumentHelpers.const("next"), dayOfWeekArgument).map {
+          case (_, days) => days.map(DateOverride.OnNext)
+        }
+      )
 
-    val onDaysAgo: Opts[List[DateOverride]] =
       Opts
-        .options[NonEmptyList[DateOverride.Delta]]("on:days-ago", help = "Create pickings for dates N days ago")
-        .map(_.flatten.map(DateOverride.OnDaysAgo))
+        .options("on", help = "Create pickings for these dates")(argument)
+        .map(_.flatten)
         .orEmpty
+    }
 
-    val sinceDaysAgo: Opts[List[DateOverride]] =
-      Opts
-        .options[DateOverride.Delta](
-          "since:days-ago",
-          help = s"Create pickings for the last N days, not including today"
-        )
-        .map(_.map(DateOverride.SinceDaysAgo))
-        .orEmpty
+    val sinceOpts: Opts[List[DateOverride]] = {
+      val argument: Argument[DateOverride] = ArgumentHelpers.oneOf(
+        ArgumentHelpers.pairArgument(none, ":", none)(
+          ArgumentHelpers.const("date"),
+          Argument[DateOverride.DateInThePast]
+        ).map {
+          case (_, date) => DateOverride.SinceDate(date)
+        },
+        ArgumentHelpers.pairArgument(none, ":", none)(
+          ArgumentHelpers.const("days-ago"),
+          Argument[DateOverride.Delta]
+        ).map {
+          case (_, delta) => DateOverride.SinceDaysAgo(delta)
+        },
+        ArgumentHelpers.pairArgument(none, ":", none)(
+          ArgumentHelpers.const("last"),
+          Argument[DayOfWeek]
+        ).map {
+          case (_, day) => DateOverride.SinceLast(day)
+        }
+      )
 
-    val onLast: Opts[List[DateOverride]] =
       Opts
-        .options[NonEmptyList[DayOfWeek]]("on:last", help = "Create pickings for immediately previous dates of the week")
-        .map(_.flatten.map(DateOverride.OnLast))
-        .orEmpty
+        .option("since", help = "Create pickings from this date until yesterday")(argument)
+        .orNone
+        .map(_.toList)
+    }
 
-    val sinceLast: Opts[List[DateOverride]] =
+    val untilOpts: Opts[List[DateOverride]] = {
+      val argument: Argument[DateOverride] = ArgumentHelpers.oneOf(
+        ArgumentHelpers.pairArgument(none, ":", none)(
+          ArgumentHelpers.const("date"),
+          Argument[DateOverride.DateInTheFuture]
+        ).map {
+          case (_, date) => DateOverride.UntilDate(date)
+        },
+        ArgumentHelpers.pairArgument(none, ":", none)(
+          ArgumentHelpers.const("days-hence"),
+          Argument[DateOverride.Delta]
+        ).map {
+          case (_, delta) => DateOverride.UntilDaysHence(delta)
+        },
+        ArgumentHelpers.pairArgument(none, ":", none)(
+          ArgumentHelpers.const("next"),
+          Argument[DayOfWeek]
+        ).map {
+          case (_, day) => DateOverride.UntilNext(day)
+        }
+      )
+
       Opts
-        .options[DayOfWeek](
-          "since:last",
-          help = "Create pickings since the immediately previous day of the week through yesterday"
-        )
-        .map(_.map(DateOverride.SinceLast))
-        .orEmpty
+        .option("until", help = "Create pickings from tomorrow until this date")(argument)
+        .orNone
+        .map(_.toList)
+    }
 
     List(
       today,
       yesterday,
-      onExactly,
-      sinceExactly,
-      onDaysAgo,
-      sinceDaysAgo,
-      onLast,
-      sinceLast
+      tomorrow,
+      onOpts,
+      sinceOpts,
+      untilOpts
     ).foldA.map(NonEmptyList.fromList).map(_.map(_.toNes))
   }
 

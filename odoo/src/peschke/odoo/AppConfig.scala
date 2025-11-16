@@ -115,7 +115,7 @@ object AppConfig {
     implicit val decoder: Decoder[AppCommand] = anyOf[AppCommand](
       Decoder[Action].map(DoAction),
       Decoder[CreatePickings].at("pickings").widen,
-      fixed("reload-known-ids").as(ReloadKnownIds)
+      exactly("reload-known-ids").as(ReloadKnownIds)
     )
   }
 

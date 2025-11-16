@@ -51,7 +51,7 @@ object Action {
 
     implicit val attributeListDecoder: Decoder[Either[List[Attribute], DefaultAttributes]] =
       anyOf[Either[List[Attribute], DefaultAttributes]](
-        fixed("default").as(DefaultAttributes.asRight),
+        exactly("default").as(DefaultAttributes.asRight),
         Decoder[List[Fields.Attribute]].map(_.asLeft)
       )
 
@@ -142,8 +142,8 @@ object Action {
   }
 
   implicit val decoder: Decoder[Action] = anyOf[Action](
-    fixed("server-info").as(ServerInfo),
-    fixed("login").as(Login),
+    exactly("server-info").as(ServerInfo),
+    exactly("login").as(Login),
     Decoder[Fields].at("fields").widen,
     Decoder[Search].at("search").widen,
     Decoder[Read].at("read").widen,

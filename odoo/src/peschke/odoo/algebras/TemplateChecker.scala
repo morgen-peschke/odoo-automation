@@ -153,7 +153,7 @@ object TemplateChecker      {
               logger.info(show"Skipping $name because it is disabled").as(none)
             else
               TemplateFilterer[F].keepPicking(picking, name, filters).flatMap { passedFilterChecks =>
-                val shouldSkipBecauseOfDate = !picking.frequency.includes(today)
+                val shouldSkipBecauseOfDate = picking.dayOfWeek =!= DayOfWeek.ofDay(today)
                 val shouldSkipBecauseOfTime = !times.contains(picking.timeOfDay)
                 if (!passedFilterChecks) none[CheckedTemplate.PickingTemplate].pure[F]
                 else if (shouldSkipBecauseOfDate)

@@ -1,17 +1,13 @@
 package peschke.odoo.algebras
 
 import cats.MonadThrow
-import cats.data.NonEmptyList
-import cats.data.NonEmptySet
+import cats.data.{NonEmptyList, NonEmptySet}
 import cats.effect.kernel.Clock
 import cats.syntax.all._
-import peschke.odoo.models.DateOverride
-import peschke.odoo.models.DayOfWeek
+import peschke.odoo.models.{DateOverride, DayOfWeek}
 import peschke.odoo.utils.JavaTime._
 
-import java.time.LocalDate
-import java.time.ZoneId
-import java.time.ZonedDateTime
+import java.time.{LocalDate, ZoneId, ZonedDateTime}
 
 trait DateOverrideResolver[F[_]] {
   def resolve(dateOverride: DateOverride): F[NonEmptyList[LocalDate]]
@@ -24,33 +20,51 @@ object DateOverrideResolver      {
     new DateOverrideResolver[F] {
       def todayF: F[LocalDate] = Clock[F].realTimeInstant.map(ZonedDateTime.ofInstant(_, zoneId).toLocalDate)
 
+      def pastDaysF: F[Iterator[LocalDate]] = todayF.map(Iterator.iterate(_)(_.minusDays(1L)).drop(1))
+
+      def futureDaysF: F[Iterator[LocalDate]] = todayF.map(Iterator.iterate(_)(_.plusDays(1L)).drop(1))
+
+      def lastF(target: DayOfWeek): F[(Iterator[LocalDate], Option[LocalDate])] =
+        pastDaysF
+          .map { pastDays =>
+            val (daysSince, daysBefore) = pastDays.take(8).span(DayOfWeek.ofDay(_) =!= target)
+
+            (daysSince, daysBefore.nextOption())
+          }
+
+      def nextF(target: DayOfWeek): F[(Iterator[LocalDate], Option[LocalDate])] =
+        futureDaysF
+          .map { futureDays =>
+            val (daysUntil, daysAfter) = futureDays.take(8).span(DayOfWeek.ofDay(_) =!= target)
+
+            (daysUntil, daysAfter.nextOption())
+          }
+
       override def resolve(dateOverride: DateOverride): F[NonEmptyList[LocalDate]] = dateOverride match {
         case DateOverride.Today => todayF.map(_.pure[NonEmptyList])
 
-        case DateOverride.OnDate(date)    => DateOverride.AnyDayButToday.raw(date).pure[NonEmptyList].pure[F]
+        case DateOverride.OnDate(date) => DateOverride.AnyDayButToday.raw(date).pure[NonEmptyList].pure[F]
+
         case DateOverride.SinceDate(date) =>
           val target = DateOverride.DateInThePast.raw(date)
-          todayF
-            .map { today =>
-              Iterator
-                .iterate(today)(_.minusDays(1L))
-                .slice(1, DateOverride.Delta.MaxSinceDays)
-                .takeWhile(date => date.isAfter(target) || date.isEqual(target))
+          pastDaysF
+            .map(
+              _.take(DateOverride.Delta.MaxSinceDays)
+                .takeWhile(!_.isBefore(target))
                 .toList
-            }
+            )
             .flatMap(NonEmptyList.fromList(_).liftTo[F] {
               new IllegalStateException(s"Unable to calculate dates since $target")
             })
+
         case DateOverride.UntilDate(date) =>
           val target = DateOverride.DateInTheFuture.raw(date)
-          todayF
-            .map { today =>
-              Iterator
-                .iterate(today)(_.plusDays(1L))
-                .slice(1, DateOverride.Delta.MaxUntilDays)
-                .takeWhile(date => date.isBefore(target) || date.isEqual(target))
+          futureDaysF
+            .map(
+              _.take(DateOverride.Delta.MaxUntilDays)
+                .takeWhile(!_.isAfter(target))
                 .toList
-            }
+            )
             .flatMap(NonEmptyList.fromList(_).liftTo[F] {
               new IllegalStateException(s"Unable to calculate dates until $target")
             })
@@ -63,97 +77,55 @@ object DateOverrideResolver      {
 
         case DateOverride.SinceDaysAgo(delta) =>
           val target = DateOverride.Delta.raw(delta)
-          todayF
-            .map { today =>
-              Iterator
-                .iterate(today)(_.minusDays(1L))
-                .take(DateOverride.Delta.MaxSinceDays)
+          pastDaysF
+            .map(
+              _.take(DateOverride.Delta.MaxSinceDays)
                 .take(target)
                 .toList
-            }
+            )
             .flatMap(NonEmptyList.fromList(_).liftTo[F] {
               new IllegalStateException(s"Unable to calculate the last $target dates")
             })
 
         case DateOverride.UntilDaysHence(delta) =>
           val target = DateOverride.Delta.raw(delta)
-          todayF
-            .map { today =>
-              Iterator
-                .iterate(today)(_.plusDays(1L))
-                .take(DateOverride.Delta.MaxUntilDays)
+          futureDaysF
+            .map(
+              _.take(DateOverride.Delta.MaxUntilDays)
                 .take(target)
                 .toList
-            }
+            )
             .flatMap(NonEmptyList.fromList(_).liftTo[F] {
               new IllegalStateException(s"Unable to calculate the next $target dates")
             })
 
         case DateOverride.OnLast(target) =>
-          todayF
-            .flatMap { today =>
-              Iterator
-                .iterate(today)(_.minusDays(1L))
-                .slice(1, 8)
-                .dropWhile(DayOfWeek.ofDay(_) =!= target)
-                .nextOption()
-                .liftTo[F](
-                  new IllegalStateException(
-                    s"Unable to calculate the date of the last $target before $today"
-                  )
-                )
-            }
-            .map(_.pure[NonEmptyList])
+          lastF(target)
+            .map(_._2.toList)
+            .flatMap(NonEmptyList.fromList(_).liftTo[F] {
+              new IllegalStateException(s"Unable to calculate the date of the last $target before today")
+            })
 
         case DateOverride.OnNext(target) =>
-          todayF
-            .flatMap { today =>
-              Iterator
-                .iterate(today)(_.plusDays(1L))
-                .slice(1, 8)
-                .dropWhile(DayOfWeek.ofDay(_) =!= target)
-                .nextOption()
-                .liftTo[F](
-                  new IllegalStateException(
-                    s"Unable to calculate the date of the next $target after $today"
-                  )
-                )
-            }
-            .map(_.pure[NonEmptyList])
+          nextF(target)
+            .map(_._2.toList)
+            .flatMap(NonEmptyList.fromList(_).liftTo[F] {
+              new IllegalStateException(s"Unable to calculate the date of the next $target after today")
+            })
 
         case DateOverride.SinceLast(target) =>
-          todayF
-            .map { today =>
-              def daysInPast = Iterator.iterate(today)(_.minusDays(1L))
-
-              daysInPast
-                .zip(daysInPast.drop(1))
-                .take(8)
-                .map { case (dayBefore, dayOf) =>
-                  (dayOf, DayOfWeek.ofDay(dayBefore))
-                }
-                .takeWhile(_._2 =!= target)
-                .map(_._1)
-                .toList
+          lastF(target)
+            .map { case (daysSince, lastOpt) =>
+              List.newBuilder.addAll(daysSince).addAll(lastOpt).result()
             }
             .flatMap(NonEmptyList.fromList(_).liftTo[F] {
               new IllegalStateException(s"Unable to calculate dates since the last $target")
             })
 
         case DateOverride.UntilNext(target) =>
-          todayF
-            .map { today =>
-              def daysInFuture = Iterator.iterate(today)(_.plusDays(1L))
-
-              daysInFuture
-                .zip(daysInFuture.drop(1))
-                .take(8)
-                .map { case (dayOf, dayAfter) =>
-                  (dayOf, DayOfWeek.ofDay(dayAfter))
-                }
-                .takeWhile(_._2 =!= target)
-                .map(_._1)
-                .toList
+          nextF(target)
+            .map { case (daysUntil, nextOpt) =>
+              List.newBuilder.addAll(daysUntil).addAll(nextOpt).result()
             }
             .flatMap(NonEmptyList.fromList(_).liftTo[F] {
               new IllegalStateException(s"Unable to calculate dates until the next $target")

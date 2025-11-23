@@ -9,8 +9,7 @@ import io.circe.Encoder
 import peschke.odoo.models.Template.Entry
 import supertagged.NewType
 
-import java.time.LocalDateTime
-import java.time.LocalTime
+import java.time.{LocalDate, LocalDateTime, LocalTime}
 import java.time.format.DateTimeFormatter
 import java.time.format.DateTimeParseException
 
@@ -38,7 +37,7 @@ object Template {
 
   type PickingNameTemplate = PickingNameTemplate.Type
 
-  final case class Entry(label: EntryLabel, tags: List[Tag], pickings: NonEmptyList[PickingTemplate])
+  final case class Entry(label: EntryLabel, tags: List[Tag], pickings: List[PickingTemplate])
 
   object MoveType extends NonEmptyString("move_type")
   type MoveType = MoveType.Type
@@ -152,8 +151,7 @@ object Template {
   }
 
   final case class PickingTemplate
-    (dayOfWeek: DayOfWeek,
-     frequency: Frequency,
+    (today: LocalDate,
      timeOfDay: TimeOfDay,
      pickingName: PickingNameTemplate,
      moveType: MoveType,
@@ -163,7 +161,9 @@ object Template {
      partnerId: PartnerId,
      disabled: Boolean,
      moves: MoveTemplateSet
-    )
+    ) {
+    val dayOfWeek: DayOfWeek = DayOfWeek.ofDay(today)
+  }
 
   object MoveName extends NonEmptyString("Move name")
   type MoveName = MoveName.Type

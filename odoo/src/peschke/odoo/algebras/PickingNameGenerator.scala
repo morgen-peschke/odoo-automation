@@ -24,9 +24,7 @@ import java.time.temporal.ChronoField
 import scala.jdk.CollectionConverters._
 
 trait PickingNameGenerator[F[_]] {
-  def generate
-    (picking: PickingTemplate, today: LocalDate, index: (EntryIndex, PickingIndex), timestamp: ZonedDateTime)
-    : F[PickingName]
+  def generate(picking: PickingTemplate, index: (EntryIndex, PickingIndex), timestamp: ZonedDateTime): F[PickingName]
 }
 object PickingNameGenerator      {
   def apply[F[_]](implicit PNG: PickingNameGenerator[F]): PNG.type = PNG
@@ -152,18 +150,18 @@ object PickingNameGenerator      {
         }
 
       override def generate
-        (picking: PickingTemplate, today: LocalDate, rawIndex: (EntryIndex, PickingIndex), timestamp: ZonedDateTime)
+        (picking: PickingTemplate, rawIndex: (EntryIndex, PickingIndex), timestamp: ZonedDateTime)
         : F[PickingName] = {
         val index = IndexStr(rawIndex._1, rawIndex._2)
         def fallBackToSimpleName: PickingName =
-          PickingName(show"MOVE/$today/${index.padded}/${picking.timeOfDay.shortName}")
+          PickingName(show"MOVE/${picking.today}/${index.padded}/${picking.timeOfDay.shortName}")
 
         buildMustache(picking, index).redeemWith(
           ex => {
             val name = fallBackToSimpleName
             logger.warn(ex)(show"Unable to compile picking name template for $name").as(name)
           },
-          runMustache(_, today, picking.dayOfWeek, picking.timeOfDay, index, timestamp).redeemWith(
+          runMustache(_, picking.today, picking.dayOfWeek, picking.timeOfDay, index, timestamp).redeemWith(
             ex => {
               val name = fallBackToSimpleName
               logger.warn(ex)(show"Unable to execute picking name template for $name").as(name)

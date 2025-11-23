@@ -1,51 +1,39 @@
 package peschke.odoo.algebras
 
-import cats.Monad
-import cats.MonadThrow
-import cats.Order
-import cats.data.NonEmptyList
-import cats.data.NonEmptySet
+import cats.{Monad, MonadThrow, Order}
+import cats.data.{NonEmptyList, NonEmptySet}
 import cats.effect.kernel.Clock
 import cats.syntax.all._
 import io.circe.Decoder
 import org.typelevel.log4cats.LoggerFactory
-import peschke.odoo.algebras.PickingNameGenerator.EntryIndex
-import peschke.odoo.algebras.PickingNameGenerator.PickingIndex
+import peschke.odoo.algebras.PickingNameGenerator.{EntryIndex, PickingIndex}
 import peschke.odoo.algebras.TemplateChecker.QuantityOnHand.CurrentQuantity
 import peschke.odoo.algebras.TemplateChecker.SkippableChecks
 import peschke.odoo.algebras.TemplateChecker.SkippableChecks.DisabledFlag
 import peschke.odoo.models.Action.Search.Condition.syntax._
-import peschke.odoo.models.RpcServiceCall.ObjectService.FieldName
-import peschke.odoo.models.RpcServiceCall.ObjectService.ModelName
-import peschke.odoo.models.Template.TimeOfDay.ScheduleAt
-import peschke.odoo.models.Template.TimeOfDay.ScheduleAtOverrides
+import peschke.odoo.models.RpcServiceCall.ObjectService.{FieldName, ModelName}
+import peschke.odoo.models.Template.TimeOfDay.{ScheduleAt, ScheduleAtOverrides}
 import peschke.odoo.models.Template._
 import peschke.odoo.models._
 import peschke.odoo.utils.Circe._
 
-import java.time.LocalDate
-import java.time.LocalDateTime
-import java.time.LocalTime
-import java.time.ZoneId
-import java.time.ZonedDateTime
-import java.time.{DayOfWeek => _}
+import java.time.{DayOfWeek => _, LocalDateTime, LocalTime, ZoneId, ZonedDateTime}
 
 trait TemplateChecker[F[_]] {
   def check
     (template: Template,
      timesOpt: Option[NonEmptySet[TimeOfDay]],
-     dateOverridesOpt: Option[NonEmptySet[DateOverride]],
      scheduleAtOverrides: ScheduleAtOverrides,
      filters: TemplateFilters,
      checksToSkip: Set[SkippableChecks]
     )
-    : F[Option[NonEmptyList[CheckedTemplate]]]
+    : F[Option[CheckedTemplate]]
 }
 object TemplateChecker      {
   def apply[F[_]](implicit TC: TemplateChecker[F]): TC.type = TC
 
   def default[
-      F[_]: ServiceCallBuilder: JsonRpc: MonadThrow: LoggerFactory: PickingNameGenerator: DateOverrideResolver: Clock: TemplateFilterer
+      F[_]: ServiceCallBuilder: JsonRpc: MonadThrow: LoggerFactory: PickingNameGenerator: Clock: TemplateFilterer
   ](zoneId: ZoneId): TemplateChecker[F] =
     new TemplateChecker[F] {
       private val logger = LoggerFactory[F].getLoggerFromClass(classOf[TemplateChecker[F]])
@@ -53,23 +41,20 @@ object TemplateChecker      {
       override def check
         (template:            Template,
          timesOpt:            Option[NonEmptySet[TimeOfDay]],
-         dateOverridesOpt:    Option[NonEmptySet[DateOverride]],
          scheduleAtOverrides: ScheduleAtOverrides,
          filters:             TemplateFilters,
          checksToSkip:        Set[SkippableChecks]
         )
-        : F[Option[NonEmptyList[CheckedTemplate]]] =
+        : F[Option[CheckedTemplate]] =
         for {
-          dates          <- DateOverrideResolver[F].resolveAll(dateOverridesOpt)
           checkTimestamp <- Clock[F].realTimeInstant.map(ZonedDateTime.ofInstant(_, zoneId))
           time = timesOpt.getOrElse(TimeOfDay.All)
           scheduleAt = scheduleAtOverrides.asScheduleAt
-          checked        <- dates.traverse(checkTemplate(template, _, time, scheduleAt, checkTimestamp, filters, checksToSkip))
-        } yield checked.sequence
+          checked        <- checkTemplate(template, time, scheduleAt, checkTimestamp, filters, checksToSkip)
+        } yield checked
 
       private def checkTemplate
         (template:       Template,
-         today:          LocalDate,
          times:          NonEmptySet[TimeOfDay],
          scheduleAt:     ScheduleAt,
          checkTimestamp: ZonedDateTime,
@@ -83,7 +68,6 @@ object TemplateChecker      {
           .traverseWithIndexM { (entry, index) =>
             checkEntry(
               entry,
-              today,
               times,
               EntryIndex.fromInt(index, maxWidth),
               scheduleAt,
@@ -98,7 +82,6 @@ object TemplateChecker      {
 
       private def checkEntry
         (entry:          Template.Entry,
-         today:          LocalDate,
          times:          NonEmptySet[TimeOfDay],
          entryIndex:     EntryIndex,
          scheduleAt:     ScheduleAt,
@@ -111,14 +94,12 @@ object TemplateChecker      {
           Monad[F].ifM(TemplateFilterer[F].keepEntry(entry, filters))(
             ifFalse = none[CheckedTemplate.Entry].pure[F],
             ifTrue = {
-              val maxWidth = entry.pickings.toList.indices.last.toString.length
+              val maxWidth = entry.pickings.indices.lastOption.fold(2)(_.toString.length)
               entry
                 .pickings
-                .toList
                 .traverseWithIndexM { (template, pickingIndex) =>
                   checkPicking(
                     template,
-                    today,
                     times,
                     entryIndex -> PickingIndex.fromInt(pickingIndex, maxWidth),
                     scheduleAt,
@@ -137,7 +118,6 @@ object TemplateChecker      {
 
       private def checkPicking
         (picking:        Template.PickingTemplate,
-         today:          LocalDate,
          times:          NonEmptySet[Template.TimeOfDay],
          index:          (EntryIndex, PickingIndex),
          scheduleAt:     ScheduleAt,
@@ -147,17 +127,14 @@ object TemplateChecker      {
         )
         : F[Option[CheckedTemplate.PickingTemplate]] =
         PickingNameGenerator[F]
-          .generate(picking, today, index, checkTimestamp)
+          .generate(picking, index, checkTimestamp)
           .flatMap { name =>
             if (picking.disabled && !checksToSkip.contains(DisabledFlag))
               logger.info(show"Skipping $name because it is disabled").as(none)
             else
               TemplateFilterer[F].keepPicking(picking, name, filters).flatMap { passedFilterChecks =>
-                val shouldSkipBecauseOfDate = picking.dayOfWeek =!= DayOfWeek.ofDay(today)
                 val shouldSkipBecauseOfTime = !times.contains(picking.timeOfDay)
                 if (!passedFilterChecks) none[CheckedTemplate.PickingTemplate].pure[F]
-                else if (shouldSkipBecauseOfDate)
-                  logger.debug(show"Skipping $name because of the day of the week").as(none)
                 else if (shouldSkipBecauseOfTime) logger.debug(show"Skipping $name because of the time of day").as(none)
                 else
                   checkMoveSet(picking, name, filters, checksToSkip)
@@ -169,7 +146,7 @@ object TemplateChecker      {
                             name,
                             ScheduledDate(
                               LocalDateTime.of(
-                                today,
+                                picking.today,
                                 picking.timeOfDay match {
                                   case TimeOfDay.Morning => TimeOfDay.MorningTime.raw(scheduleAt.am)
                                   case TimeOfDay.Noon    => LocalTime.NOON

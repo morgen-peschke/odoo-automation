@@ -13,23 +13,9 @@ import org.http4s.ember.client.EmberClientBuilder
 import org.typelevel.log4cats.LoggerFactory
 import org.typelevel.log4cats.slf4j.Slf4jFactory
 import peschke.odoo.AppConfig
-import peschke.odoo.AppConfig.DryRun
-import peschke.odoo.AppConfig.Verbose
+import peschke.odoo.AppConfig.{AppCommand, DryRun, Verbose}
 import peschke.odoo.JsonLoader
-import peschke.odoo.algebras.CommandRunner
-import peschke.odoo.algebras.DateOverrideResolver
-import peschke.odoo.algebras.Generator
-import peschke.odoo.algebras.JsonRpc
-import peschke.odoo.algebras.KnownIdsBuilder
-import peschke.odoo.algebras.LocationNameExpander
-import peschke.odoo.algebras.LoginManager
-import peschke.odoo.algebras.PickingCreator
-import peschke.odoo.algebras.PickingNameGenerator
-import peschke.odoo.algebras.RequestBuilder
-import peschke.odoo.algebras.ServiceCallBuilder
-import peschke.odoo.algebras.TemplateChecker
-import peschke.odoo.algebras.TemplateDecoder
-import peschke.odoo.algebras.TemplateFilterer
+import peschke.odoo.algebras.{CommandRunner, DateOverrideResolver, DatesGenerator, Generator, JsonRpc, KnownIdsBuilder, LocationNameExpander, LoginManager, PickingCreator, PickingNameGenerator, RequestBuilder, ServiceCallBuilder, TemplateChecker, TemplateDecoder, TemplateFilterer}
 import peschke.odoo.models.RpcServiceCall.CommonService
 import peschke.odoo.models.RpcServiceCall.ObjectService
 import upperbound.Limiter
@@ -51,12 +37,19 @@ object Run extends IOApp {
   def run(config: AppConfig): IO[ExitCode] =
     EmberClientBuilder.default[IO].build.use { client =>
       Limiter.start[IO](config.minIntervalBetweenRequests).use { limiter =>
-        Random.scalaUtilRandom[IO].flatMap { implicit random =>
+        (
+          Random.scalaUtilRandom[IO],
+          DatesGenerator.default[IO](DateOverrideResolver.default[IO](ZoneId.systemDefault()))(config.command match {
+            case AppCommand.DoAction(_) | AppCommand.ReloadKnownIds            => None
+            case AppCommand.CreatePickings(_, _, _, dateOverridesOpt, _, _, _) => dateOverridesOpt
+          })
+        ).flatMapN { (scalaRandom, datesGenerator) =>
+          implicit val random: Random[IO] = scalaRandom
           implicit val jsonLoader: JsonLoader[IO] = JsonLoader.default[IO]
           implicit val loginManager: LoginManager[IO] = LoginManager.default[IO](config.loginCache, config.auth)
           implicit val serviceCallBuilder: ServiceCallBuilder[IO] = ServiceCallBuilder.default[IO](config.auth)
           implicit val locationNameExpander: LocationNameExpander[IO] = LocationNameExpander.default[IO]
-          implicit val templateDecoder: TemplateDecoder[IO] = TemplateDecoder.default[IO]
+          implicit val templateDecoder: TemplateDecoder[IO] = TemplateDecoder.default[IO](datesGenerator)
           implicit val requestBuilder: RequestBuilder[IO] = RequestBuilder.default[IO](config.auth.serverUrl)
           implicit val jsonRpc: JsonRpc[IO] = {
             def liveRpc = JsonRpc.default[IO](
@@ -91,8 +84,6 @@ object Run extends IOApp {
             globalNameSuffixOpt = config.globalNameSuffixOpt
           )
           implicit val templateFilterer: TemplateFilterer[IO] = TemplateFilterer.default[IO]
-          implicit val dateOverrideResolver: DateOverrideResolver[IO] =
-            DateOverrideResolver.default[IO](ZoneId.systemDefault())
           implicit val templateChecker: TemplateChecker[IO] = TemplateChecker.default[IO](ZoneId.systemDefault())
           implicit val pickingCreator: PickingCreator[IO] = PickingCreator.default[IO]
           implicit val knownIdsBuilder: KnownIdsBuilder[IO] = KnownIdsBuilder.default[IO]

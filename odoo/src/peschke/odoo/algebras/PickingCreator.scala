@@ -25,14 +25,13 @@ object PickingCreator      {
     new PickingCreator[F] {
       private val logger = LoggerFactory[F].getLoggerFromClass(classOf[PickingCreator[F]])
 
-      private def validate(createPickings: CreatePickings): F[Option[NonEmptyList[CheckedTemplate]]] =
+      private def validate(createPickings: CreatePickings): F[Option[CheckedTemplate]] =
         TemplateDecoder[F]
           .decode(createPickings.template, createPickings.knownIdsOpt)
           .flatMap(
             TemplateChecker[F].check(
               _,
               createPickings.times,
-              createPickings.dateOverridesOpt,
               createPickings.scheduleAtOverrides,
               createPickings.templateFilters,
               createPickings.operation match {
@@ -110,9 +109,9 @@ object PickingCreator      {
             )
           )
 
-      private def printPlan(templates: NonEmptyList[CheckedTemplate]): F[Unit] = {
+      private def printPlan(template: CheckedTemplate): F[Unit] = {
         val out = Console[F]
-        templates.traverse_(_.entries.traverse { entry =>
+        template.entries.traverseVoid { entry =>
           val labelBar = "=" * entry.label.string.length
           out.println {
             s"""
@@ -131,7 +130,7 @@ object PickingCreator      {
                 }.mkString_("\n")
             } >> out.println("")
           }
-        })
+        }
       }
 
       override def run(createPickings: CreatePickings): F[Unit] =
@@ -140,7 +139,7 @@ object PickingCreator      {
             case PickingOperation.Create       =>
               checkedTemplates match {
                 case None                   => logger.info("Nothing to create")
-                case Some(checkedTemplates) => checkedTemplates.traverse(processTemplate).map(_.reduce)
+                case Some(checkedTemplates) => processTemplate(checkedTemplates)
               }
             case PickingOperation.PrintPlan(_) =>
               checkedTemplates match {

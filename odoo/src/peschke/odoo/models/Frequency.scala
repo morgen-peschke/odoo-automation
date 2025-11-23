@@ -12,14 +12,29 @@ import java.time.LocalDate
 sealed trait Frequency
 object Frequency {
   sealed trait Unanchored
-  case object Never                                                                extends Frequency with Unanchored
-  case object Daily                                                                extends Frequency with Unanchored
-  final case class Weekly(days: NonEmptySet[DayOfWeek])                            extends Frequency with Unanchored
-  final case class FloatingCycles(cycles: NonEmptyList[Cycled.Cycle])              extends Unanchored
-  final case class Cycled(starting: LocalDate, cycles: NonEmptyList[Cycled.Cycle]) extends Frequency
+  case object Never                                                                    extends Frequency with Unanchored
+  case object Daily                                                                    extends Frequency with Unanchored
+  final case class Weekly(days: NonEmptySet[DayOfWeek])                                extends Frequency with Unanchored
+  final case class FloatingCycles(cycles: NonEmptyList[Cycled.Cycle])                  extends Unanchored
+  final case class Cycled(starting: Cycled.Anchor, cycles: NonEmptyList[Cycled.Cycle]) extends Frequency
   object Cycled {
     object Length extends PosInt("length")
     type Length = Length.Type
+
+    object DayOfMonth extends PosInt("day-of-month")
+    type DayOfMonth = DayOfMonth.Type
+
+    sealed trait Anchor
+    object Anchor {
+      final case class Fixed(on: LocalDate)       extends Anchor
+      final case class Monthly(every: DayOfMonth) extends Anchor
+
+      implicit val decoder: Decoder[Anchor] = anyOf[Anchor](
+        Decoder[LocalDate].at("on").map(Fixed),
+        Decoder[DayOfMonth].at("monthly-on-day").map(Monthly)
+      )
+    }
+
     final case class Cycle(length: Length, frequency: Frequency.Unanchored)
   }
 
@@ -28,8 +43,8 @@ object Frequency {
     exactly("daily").as(Daily),
     exactly("weekdays").as(Weekly(DayOfWeek.WeekDays)),
     exactly("weekends").as(Weekly(DayOfWeek.WeekEnd)),
-    Decoder[NonEmptySet[DayOfWeek]].map(Weekly),
-    Decoder[DayOfWeek].map(NonEmptySet.one(_)).map(Weekly)
+    Decoder[DayOfWeek].map(NonEmptySet.one(_)).map(Weekly),
+    Decoder[NonEmptySet[DayOfWeek]].map(Weekly)
   )
 
   private implicit val unanchoredDecoder: Decoder[Unanchored] = Defer[Decoder].fix { recurse =>
@@ -38,8 +53,8 @@ object Frequency {
     }
 
     anyOf[Unanchored](
-      commonDecoder.widen,
-      Decoder[NonEmptyList[Cycled.Cycle]].at("cycles").map(FloatingCycles.apply).widen
+      Decoder[NonEmptyList[Cycled.Cycle]].at("cycles").map(FloatingCycles.apply).widen,
+      commonDecoder.widen
     )
   }
 
@@ -48,8 +63,8 @@ object Frequency {
       Decoder.forProduct2[Cycled.Cycle, Length, Unanchored]("length", "frequency")(Cycled.Cycle.apply)
 
     anyOf[Frequency](
-      commonDecoder.widen,
-      Decoder.forProduct2[Cycled, LocalDate, NonEmptyList[Cycled.Cycle]]("starting", "cycles")(Cycled.apply).widen
+      Decoder.forProduct2[Cycled, Cycled.Anchor, NonEmptyList[Cycled.Cycle]]("starting", "cycles")(Cycled.apply).widen,
+      commonDecoder.widen
     )
   }
 }

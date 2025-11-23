@@ -3,7 +3,6 @@ package peschke.odoo.algebras
 import cats.MonadThrow
 import cats.data.NonEmptyList
 import cats.syntax.all._
-import io.circe.ACursor
 import io.circe.Decoder
 import io.circe.DecodingFailure
 import peschke.odoo.JsonLoader
@@ -95,20 +94,12 @@ object TemplateDecoder      {
         val pickingTypeIdDecoder = wrap[PickingTypeId](knownIds.pickingTypeIds.get)
         val partnerIdDecoder = wrap[PartnerId](knownIds.partners.get)
         accumulatingDecoder { c =>
-          def asIfDefined[A: Decoder](cursor: ACursor): Option[Decoder.AccumulatingResult[A]] =
-            if (cursor.focus.isEmpty) none else cursor.asAcc[A].some
-
-          def ifMissingOrFieldOrDefault[A: Decoder](name: String, default: A): Decoder.AccumulatingResult[A] =
-            asIfDefined[A](c.downField(name))
-              .orElse(asIfDefined[A](c.up.up.downField("common").downField(name)))
-              .getOrElse(default.valid)
-
           def fieldOrDefault[A: Decoder](name: String): Decoder.AccumulatingResult[A] =
-            asIfDefined[A](c.downField(name)).getOrElse(c.up.up.downField("common").downField(name).asAcc[A])
+            c.downField(name).asAcc[A].findValid(c.up.up.downField("common").downField(name).asAcc[A])
 
           (
-            ifMissingOrFieldOrDefault[Frequency]("frequency", Frequency.Daily),
-            ifMissingOrFieldOrDefault[TimeOfDay]("timeOfDay", TimeOfDay.AnyTime),
+            fieldOrDefault[Frequency]("frequency"),
+            fieldOrDefault[TimeOfDay]("timeOfDay"),
             fieldOrDefault[PickingNameTemplate]("pickingName"),
             fieldOrDefault[MoveType]("move_type"),
             fieldOrDefault("picking_type_id")(pickingTypeIdDecoder),

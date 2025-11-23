@@ -1,11 +1,12 @@
 package peschke.odoo.algebras
 
-import cats.syntax.all._
 import cats.data.{NonEmptyList, NonEmptySet}
+import cats.syntax.all._
 import munit.{FunSuite, Location}
 import peschke.odoo.models.DayOfWeek
 import peschke.odoo.models.DayOfWeek.{Friday, Monday, Wednesday}
-import peschke.odoo.models.Frequency.Cycled.{Cycle, Length}
+import peschke.odoo.models.Frequency.Cycled.Anchor.{Fixed, Monthly}
+import peschke.odoo.models.Frequency.Cycled.{Cycle, DayOfMonth, Length}
 import peschke.odoo.models.Frequency.{Cycled, Daily, FloatingCycles, Never, Weekly}
 
 import java.time.{LocalDate, Month, Year}
@@ -31,11 +32,13 @@ import java.time.{LocalDate, Month, Year}
   */
 class DatesGeneratorTest extends FunSuite {
   private val year = Year.of(2000)
-  private def august(day: Int): LocalDate = year.atMonth(Month.AUGUST).atDay(day)
-  private def august(days: Range)(implicit loc: Location): NonEmptyList[LocalDate] =
-    NonEmptyList.fromList(days.map(august).toList).getOrElse {
-      fail("august(Range) requires a non-empty range")
+  private def dayOf(month: Month, day: Int): LocalDate = year.atMonth(month).atDay(day)
+  private def daysIn(month: Month, days: Range)(implicit loc: Location): NonEmptyList[LocalDate] =
+    NonEmptyList.fromList(days.map(dayOf(month, _)).toList).getOrElse {
+      fail("daysIn(Range) requires a non-empty range")
     }
+  private def august(day: Int): LocalDate = dayOf(Month.AUGUST, day)
+  private def august(days: Range)(implicit loc: Location): NonEmptyList[LocalDate] = daysIn(Month.AUGUST, days)
   private val standardDateRange = NonEmptyList.of(
     august(1),
     august(2),
@@ -81,7 +84,12 @@ class DatesGeneratorTest extends FunSuite {
 
   test("generate(Cycled) returns the empty list when before start date") {
     assertEquals(
-      standardGenerator.generate(Cycled(august(10), NonEmptyList.one(Cycle(length(3), Daily)))),
+      standardGenerator.generate(
+        Cycled(
+          Fixed(august(10)),
+          NonEmptyList.one(Cycle(length(3), Daily))
+        )
+      ),
       Nil
     )
   }
@@ -90,7 +98,7 @@ class DatesGeneratorTest extends FunSuite {
     assertEquals(
       standardGenerator.generate(
         Cycled(
-          LocalDate.of(1, Month.JANUARY, 1),
+          Fixed(LocalDate.of(1, Month.JANUARY, 1)),
           NonEmptyList.one(Cycle(length(1), Daily))
         )
       ),
@@ -102,7 +110,7 @@ class DatesGeneratorTest extends FunSuite {
     assertEquals(
       standardGenerator.generate(
         Cycled(
-          year.atMonth(Month.JULY).atDay(15),
+          Fixed(dayOf(Month.JULY, 15)),
           NonEmptyList.of(
             Cycle(length(7), Daily),
             Cycle(length(7), Never)
@@ -122,7 +130,7 @@ class DatesGeneratorTest extends FunSuite {
     assertEquals(
       DatesGenerator.forDateRange(august(1 to 31)).generate {
         Cycled(
-          august(8),
+          Fixed(august(8)),
           NonEmptyList.of(
             Cycle(
               length(7),
@@ -154,7 +162,7 @@ class DatesGeneratorTest extends FunSuite {
     assertEquals(
       DatesGenerator.forDateRange(august(1 to 14)).generate {
         Cycled(
-          august(1),
+          Fixed(august(1)),
           NonEmptyList.of(
             Cycle(
               length(7),
@@ -177,6 +185,52 @@ class DatesGeneratorTest extends FunSuite {
         august(6),
         august(7)
       )
+    )
+  }
+
+  test("generate(Cycled) supports 'take on the first two days of the month'") {
+    assertEquals(
+      DatesGenerator
+        .forDateRange(
+          NonEmptyList
+            .of(
+              daysIn(Month.JANUARY, 1 to 15),
+              daysIn(Month.FEBRUARY, 1 to 15),
+              daysIn(Month.AUGUST, 1 to 15),
+              daysIn(Month.SEPTEMBER, 1 to 15)
+            ).flatten
+        )
+        .generate(
+          Cycled(
+            Monthly(DayOfMonth.fromInt(1).valueOr(fail(_))),
+            NonEmptyList.of(
+              Cycle(length(2), Daily),
+              Cycle(length(30), Never)
+            )
+          )
+        ),
+      NonEmptyList
+        .of(
+          daysIn(Month.JANUARY, 1 to 2),
+          daysIn(Month.FEBRUARY, 1 to 2),
+          daysIn(Month.AUGUST, 1 to 2),
+          daysIn(Month.SEPTEMBER, 1 to 2)
+        ).flatten.toList
+    )
+  }
+
+  test("quick-check") {
+    assertEquals(
+      DatesGenerator
+        .forDateRange(NonEmptyList.one(LocalDate.now))
+        .generate(Cycled(
+          Monthly(DayOfMonth.fromInt(1).valueOr(fail(_))),
+          NonEmptyList.of(
+            Cycle(length(14), Daily),
+            Cycle(length(30), Never),
+          )
+        )),
+      Nil
     )
   }
 }

@@ -70,6 +70,10 @@ trait NewInt extends supertagged.NewType[Int] {
   implicit val argument: Argument[Type] = Argument.from("int") { raw =>
     Argument[Int].read(raw).andThen(fromInt(_).toValidatedNel)
   }
+
+  implicit final class NewIntOps(private val ni: Type) {
+    def int: Int = raw(ni)
+  }
 }
 
 abstract class PosInt(description: String) extends NewInt {

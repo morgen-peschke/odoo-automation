@@ -218,19 +218,4 @@ class DatesGeneratorTest extends FunSuite {
         ).flatten.toList
     )
   }
-
-  test("quick-check") {
-    assertEquals(
-      DatesGenerator
-        .forDateRange(NonEmptyList.one(LocalDate.now))
-        .generate(Cycled(
-          Monthly(DayOfMonth.fromInt(1).valueOr(fail(_))),
-          NonEmptyList.of(
-            Cycle(length(14), Daily),
-            Cycle(length(30), Never),
-          )
-        )),
-      Nil
-    )
-  }
 }

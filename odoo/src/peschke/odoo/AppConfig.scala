@@ -112,6 +112,44 @@ object AppConfig {
 
     case object ReloadKnownIds extends AppCommand
 
+    case object ExplainFilter extends AppCommand {
+      val explanation: String =
+        s"""Not a strictly valid grammar, but here's the gist:
+           |
+           |QUOTED      := '"' [^"]* '"'
+           |UNQUOTED    := [A-Za-z0-9_.-]+
+           |WS          := ' ' | '\\t'
+           |TEXT        := QUOTED | UNQUOTED
+           |
+           |FALSE       := 'false'
+           |TRUE        := 'true'
+           |EXACT       := 'is:' TEXT
+           |PREFIX      := 'starts:' TEXT
+           |SUFFIX      := 'ends:' TEXT
+           |CONTAINS    := 'contains:' TEXT
+           |
+           |NOT_ALPHA   := 'not:' FILTER
+           |NOT_SYMBOL  := '!' FILTER
+           |NOT         := NOT_ALPHA | NOT_SYMBOL
+           |
+           |CASE_INSENSITIVE := 'ci:' FILTER
+           |
+           |AND_ALPHA   := FILTER 'and' FILTER
+           |AND_SYMBOL  := FILTER '&' FILTER
+           |AND         := AND_ALPHA | AND_SYMBOL
+           |
+           |OR_ALPHA    := FILTER 'or' FILTER
+           |OR_SYMBOL   := FILTER '|' FILTER
+           |OR          := OR_ALPHA | OR_SYMBOL
+           |
+           |NO_PARENS   := FALSE | TRUE | EXACT | PREFIX | SUFFIX | CONTAINS | NOT | AND | OR | CASE_INSENSITIVE
+           |WITH_PARENS := '(' NO_PARENS ')'
+           |FILTER      := WITH_PARENS | NO_PARENS
+           |
+           |If you need to do multiple checks on the same value, use 'or' or 'and' (ex: a tag with a specific prefix and suffix).
+           |If you need to do checks on multiple tags that all must pass, use multiple separate filters (ex: a picking with two specific tags).""".stripMargin
+    }
+
     implicit val decoder: Decoder[AppCommand] = anyOf[AppCommand](
       Decoder[Action].map(DoAction),
       Decoder[CreatePickings].at("pickings").widen,

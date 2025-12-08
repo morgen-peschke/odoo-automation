@@ -40,8 +40,8 @@ object Run extends IOApp {
         (
           Random.scalaUtilRandom[IO],
           DatesGenerator.default[IO](DateOverrideResolver.default[IO](ZoneId.systemDefault()))(config.command match {
-            case AppCommand.DoAction(_) | AppCommand.ReloadKnownIds            => None
-            case AppCommand.CreatePickings(_, _, _, dateOverridesOpt, _, _, _) => dateOverridesOpt
+            case AppCommand.DoAction(_) | AppCommand.ReloadKnownIds | AppCommand.ExplainFilter => None
+            case AppCommand.CreatePickings(_, _, _, dateOverridesOpt, _, _, _)                 => dateOverridesOpt
           })
         ).flatMapN { (scalaRandom, datesGenerator) =>
           implicit val random: Random[IO] = scalaRandom

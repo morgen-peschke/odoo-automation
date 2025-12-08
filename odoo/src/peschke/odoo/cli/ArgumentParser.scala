@@ -14,6 +14,7 @@ import fs2.io.file.Path
 import io.circe.Json
 import peschke.odoo.AppConfig
 import peschke.odoo.AppConfig.AppCommand
+import peschke.odoo.AppConfig.AppCommand.ExplainFilter
 import peschke.odoo.AppConfig.AuthConfig
 import peschke.odoo.AppConfig.DryRun
 import peschke.odoo.AppConfig.LoginCache
@@ -79,37 +80,7 @@ object ArgumentParser      {
         .parse(raw)
         .leftMap { error =>
           s"""Expected filter expression
-             |Not a strictly valid grammar, but here's the gist:
-             |
-             |QUOTED      := '"' [^"]* '"'
-             |UNQUOTED    := [A-Za-z0-9_.-]+
-             |WS          := ' ' | '\\t'
-             |TEXT        := QUOTED | UNQUOTED
-             |
-             |FALSE       := 'false'
-             |TRUE        := 'true'
-             |EXACT       := 'is:' TEXT
-             |PREFIX      := 'starts:' TEXT
-             |SUFFIX      := 'ends:' TEXT
-             |CONTAINS    := 'contains:' TEXT
-             |
-             |NOT_ALPHA   := 'not:' FILTER
-             |NOT_SYMBOL  := '!' FILTER
-             |NOT         := NOT_ALPHA | NOT_SYMBOL
-             |
-             |CASE_INSENSITIVE := 'ci:' FILTER
-             |
-             |AND_ALPHA   := FILTER 'and' FILTER
-             |AND_SYMBOL  := FILTER '&' FILTER
-             |AND         := AND_ALPHA | AND_SYMBOL
-             |
-             |OR_ALPHA    := FILTER 'or' FILTER
-             |OR_SYMBOL   := FILTER '|' FILTER
-             |OR          := OR_ALPHA | OR_SYMBOL
-             |
-             |NO_PARENS   := FALSE | TRUE | EXACT | PREFIX | SUFFIX | CONTAINS | NOT | AND | OR | CASE_INSENSITIVE
-             |WITH_PARENS := '(' NO_PARENS ')'
-             |FILTER      := WITH_PARENS | NO_PARENS
+             |${ExplainFilter.explanation}
              |$error""".stripMargin
         }
         .toValidatedNel
@@ -490,10 +461,10 @@ object ArgumentParser      {
 
     implicit val skippableChecksArg: Argument[SkippableChecks] = ArgumentHelpers.enumArgument[SkippableChecks]
 
-    val viewPlanOpts =
+    val checkPlanOpts =
       Opts
         .flag(
-          "view-plan",
+          "check-plan",
           help = """Do not create the pickings, print a summary of what would be created instead.
                    |
                    |Similar to what can be done with ODOO_DRY_RUN, but a bit easier to read.""".stripMargin
@@ -513,12 +484,19 @@ object ArgumentParser      {
         .flag(long = "no-checks", help = "Equivalent to calling --skip-check with all possible arguments")
         .as(SkippableChecks.values.toList)
 
+    val viewPlanOpts =
+      Opts
+        .flag("view-plan", help = "Alias for --check-plan and --no-checks").as(
+          PickingCreator.PickingOperation.PrintPlan(Set.empty)
+        )
+
     createOpts
       .orElse {
-        (viewPlanOpts, checksToSkipOpts.orElse(skipAllChecks).withDefault(Nil)).mapN { (_, checks) =>
+        (checkPlanOpts, checksToSkipOpts.orElse(skipAllChecks).withDefault(Nil)).mapN { (_, checks) =>
           PickingCreator.PickingOperation.PrintPlan(checks.toSet)
         }
       }
+      .orElse(viewPlanOpts)
       .withDefault(PickingCreator.PickingOperation.Create)
   }
 
@@ -548,6 +526,11 @@ object ArgumentParser      {
       AppCommand.ReloadKnownIds.pure[Opts]
     }
 
+  private val explainOpts: Opts[AppCommand] =
+    Opts.subcommand("explain", help = "Explain certain argument formats") {
+      Opts.flag("filters", help = "Explain syntax for filters like --tag").as(AppCommand.ExplainFilter)
+    }
+
   private val appCommandOpt: Opts[AppCommand] =
     serverInfoOpt
       .orElse(loginOpt)
@@ -559,6 +542,7 @@ object ArgumentParser      {
       .map(AppCommand.DoAction)
       .orElse(createPickingSubCmd)
       .orElse(generateKnownIds)
+      .orElse(explainOpts)
 
   private val appConfigViaParametersOpt: Opts[AppConfig] =
     (

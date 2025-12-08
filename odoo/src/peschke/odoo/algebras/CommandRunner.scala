@@ -44,6 +44,8 @@ object CommandRunner      {
               .map(_.asJson)
               .map(_.spaces2SortKeys)
               .flatMap(Console[F].println(_))
+          case AppCommand.ExplainFilter          =>
+            Console[F].println(AppCommand.ExplainFilter.explanation)
         }
     }
 }

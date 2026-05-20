@@ -91,7 +91,7 @@ trait NewDouble extends supertagged.NewType[Double] {
   implicit val encoder: Encoder[Type] = Encoder[Double].contramap(raw)
 
   implicit val argument: Argument[Type] = Argument.from("float") { raw =>
-    Argument[Int].read(raw).andThen(fromDouble(_).toValidatedNel)
+    Argument[Double].read(raw).andThen(fromDouble(_).toValidatedNel)
   }
 }
 

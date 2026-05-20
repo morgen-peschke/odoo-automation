@@ -32,7 +32,7 @@ object Template {
 
   object PickingNameTemplate extends NonEmptyString("Picking name template") {
     override def fromString(raw: String): Either[String, Type] =
-      apply(raw.stripSuffix("/").stripPrefix("/")).asRight
+      this.apply(raw.stripSuffix("/").stripPrefix("/")).asRight
   }
 
   type PickingNameTemplate = PickingNameTemplate.Type
@@ -63,7 +63,7 @@ object Template {
     implicit val decoder: Decoder[Type] = Decoder[String].emap { s =>
       Either
         .catchOnly[DateTimeParseException](LocalDateTime.parse(s, formatter))
-        .bimap(e => s"Invalid date string: ${e.getMessage}", apply(_))
+        .bimap(e => s"Invalid date string: ${e.getMessage}", this.apply(_))
     }
   }
 
@@ -110,19 +110,19 @@ object Template {
     val All: NonEmptySet[TimeOfDay] = NonEmptySet.of(Morning, Noon, Night, AnyTime)
 
     object MorningTime extends NewLocalTime("time in AM") {
-      val Default: Type = apply(LocalTime.of(9, 0))
+      val Default: Type = this.apply(LocalTime.of(9, 0))
 
       override def fromLocalTime(t: LocalTime): Either[String, MorningTime.Type] =
-        if (t.isBefore(LocalTime.NOON)) apply(t).asRight
+        if (t.isBefore(LocalTime.NOON)) this.apply(t).asRight
         else s"$name must be before noon".asLeft
     }
     type MorningTime = MorningTime.Type
 
     object NightTime extends NewLocalTime("time in PM") {
-      val Default: Type = apply(LocalTime.of(18, 0))
+      val Default: Type = this.apply(LocalTime.of(18, 0))
 
       override def fromLocalTime(t: LocalTime): Either[String, NightTime.Type] =
-        if (t.isAfter(LocalTime.NOON)) apply(t).asRight
+        if (t.isAfter(LocalTime.NOON)) this.apply(t).asRight
         else s"$name must be after noon".asLeft
     }
     type NightTime = NightTime.Type

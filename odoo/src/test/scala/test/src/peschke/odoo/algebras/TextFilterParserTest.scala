@@ -120,6 +120,9 @@ class TextFilterParserTest extends ScalaCheckSuite {
     forAllNoShrink(validQuotableStrings) { input =>
       assertEq(parser.parse(s"""is:"$input""""), TextFilter.exact(input).asRight[String])
     }
+  }
+
+  test("TextFilter.default should parse 'is:quoted' with escapes") {
     assertEq(
       parser.parse("""is:"<\">""""),
       """Input: is:"<\">"

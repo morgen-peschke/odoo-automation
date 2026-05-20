@@ -74,14 +74,14 @@ object Action {
       extends Action
   object Search {
     object Condition extends supertagged.NewType[List[Json]] {
-      implicit val decoder: Decoder[Type] = Decoder[List[Json]].map(apply(_))
+      implicit val decoder: Decoder[Type] = Decoder[List[Json]].map(this.apply(_))
       implicit val encoder: Encoder[Type] = Encoder[List[Json]].contramap(raw)
 
       implicit val argument: Argument[Type] = Argument.from("json array") { raw =>
         io.circe.parser.parse(raw)
           .leftMap(_.message)
           .flatMap(_.as[List[Json]].leftMap(_.show))
-          .map(apply(_))
+          .map(this.apply(_))
           .toValidatedNel
       }
 

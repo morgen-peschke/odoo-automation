@@ -310,7 +310,7 @@ object TemplateChecker      {
       val Zero: Type = CurrentQuantity(0.0d)
 
       implicit final class Ops(private val cq: Type) extends AnyVal {
-        def plus(other: Type): Type = apply(raw(cq) + raw(other))
+        def plus(other: Type): Type = CurrentQuantity.this.apply(raw(cq) + raw(other))
       }
     }
     type CurrentQuantity = CurrentQuantity.Type

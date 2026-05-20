@@ -66,7 +66,7 @@ object AppConfig {
 
   object LoginCache extends supertagged.NewType[fs2.io.file.Path] {
     def fromString(raw: String): Either[String, Type] =
-      Either.catchNonFatal(fs2.io.file.Path(raw)).bimap(_.getMessage, apply(_))
+      Either.catchNonFatal(fs2.io.file.Path(raw)).bimap(_.getMessage, this.apply(_))
 
     implicit val argument: Argument[Type] = Argument.from("path")(fromString(_).toValidatedNel)
     implicit val decoder: Decoder[Type] = Decoder[String].emap(fromString)

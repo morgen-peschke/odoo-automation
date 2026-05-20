@@ -1,8 +1,8 @@
 ThisBuild / scalaVersion := "2.13.18"
 
-val odoo =
+lazy val odoo =
     project
-      .in(file("odoo"))
+      .in(file("."))
       .settings(
         name := "odoo-automation",
         description := "odoo-automation",
@@ -15,6 +15,7 @@ val odoo =
             email = "",
             url = url("https://github.com/morgen-peschke"))
         ),
+        maintainer := "morgen.peschke@gmail.com",
         version := "0.1.0",
         versionScheme := Some("early-semver"),
         scalaVersion := "2.13.18",
@@ -41,4 +42,8 @@ val odoo =
           "org.scalacheck" %% "scalacheck" % "1.17.0" % Test,
           "org.scalameta" %% "munit-scalacheck" % "0.7.29" % Test
         ),
+        // avoid generating docs
+        Compile / doc / sources                := Nil,
+        Compile / packageDoc / publishArtifact := false
       )
+      .enablePlugins(JavaAppPackaging)

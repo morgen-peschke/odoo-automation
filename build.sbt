@@ -33,7 +33,7 @@ lazy val odoo =
           "io.circe" %% "circe-core" % "0.14.15",
           "io.circe" %% "circe-parser" % "0.14.15",
           "org.typelevel" %% "log4cats-slf4j" % "2.5.0",
-          "org.slf4j" % "slf4j-api" % "2.0.13",
+          "org.slf4j" % "slf4j-simple" % "2.0.13",
           "com.github.spullara.mustache.java" % "compiler" % "0.9.10",
           "org.systemfw" %% "upperbound" % "0.5.0",
           "org.typelevel" %% "cats-parse" % "0.3.9",

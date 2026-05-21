@@ -7,7 +7,6 @@
 
 target
 out
-project
 metals.sbt
 *.iml
 
